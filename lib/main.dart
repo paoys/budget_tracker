@@ -152,18 +152,16 @@ class _BottomBar extends StatelessWidget {
                 builder: (ctx, _) {
                   final t = controllers[i].value;
                   return Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Stack(children: [
+                    SizedBox(height: 24, child: Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
                       AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
-                        width: sel ? 40 : 28, height: sel ? 26 : 0,
+                        width: sel ? 40 : 28, height: sel ? 24 : 0,
                         decoration: sel ? BoxDecoration(color: colors.textPrimary.withOpacity(0.1), borderRadius: BorderRadius.circular(13)) : null,
                       ),
-                      Positioned.fill(child: Center(child: Stack(clipBehavior: Clip.none, children: [
-                        Icon(sel ? item.activeIcon : item.icon, size: 20, color: Color.lerp(colors.textMuted, colors.textPrimary, t)),
-                        if (i == dueBadgeIndex && hasDue)
-                          Positioned(top: -2, right: -2, child: Container(width: 6, height: 6, decoration: const BoxDecoration(color: kWarningColor, shape: BoxShape.circle))),
-                      ]))),
-                    ]),
+                      Icon(sel ? item.activeIcon : item.icon, size: 20, color: Color.lerp(colors.textMuted, colors.textPrimary, t)),
+                      if (i == dueBadgeIndex && hasDue)
+                        Positioned(top: -2, right: -2, child: Container(width: 6, height: 6, decoration: const BoxDecoration(color: kWarningColor, shape: BoxShape.circle))),
+                    ])),
                     const SizedBox(height: 3),
                     Text(item.label, style: GoogleFonts.inter(fontSize: 10, fontWeight: sel ? FontWeight.w700 : FontWeight.w400, color: Color.lerp(colors.textMuted, colors.textPrimary, t))),
                   ]);
