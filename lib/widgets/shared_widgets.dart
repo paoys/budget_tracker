@@ -49,12 +49,17 @@ class StatTile extends StatelessWidget {
   final Color? accentColor;
   final String? sub;
   final IconData? icon;
-  const StatTile({super.key, required this.label, required this.value, this.accentColor, this.sub, this.icon});
+  final bool isCurrency;
+  const StatTile({super.key, required this.label, required this.value, this.accentColor, this.sub, this.icon, this.isCurrency = true});
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<AppColors>()!;
     final accent = accentColor ?? colors.textMuted;
+    final valueText = isCurrency
+      ? pesoFmt.format(value)
+      : (value == value.truncateToDouble() ? value.toInt().toString() : value.toStringAsFixed(1));
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(color: colors.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: colors.divider)),
@@ -64,7 +69,7 @@ class StatTile extends StatelessWidget {
           if (icon != null) Icon(icon, size: 14, color: colors.textMuted),
         ]),
         const SizedBox(height: 10),
-        Text(pesoFmt.format(value), style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: -0.5, color: accent == colors.textMuted ? colors.textPrimary : accent)),
+        Text(valueText, style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: -0.5, color: accent == colors.textMuted ? colors.textPrimary : accent)),
         if (sub != null) ...[const SizedBox(height: 4), Text(sub!, style: GoogleFonts.inter(fontSize: 11, color: colors.textSecondary))],
       ]),
     );

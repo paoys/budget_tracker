@@ -32,7 +32,7 @@ class CreditCardScreen extends StatelessWidget {
             Row(children: [
               Expanded(child: StatTile(label: 'Total Owed', value: totalOwed, accentColor: totalOwed > 0 ? kDangerColor : kSuccessColor, icon: Icons.credit_card)),
               const SizedBox(width: 10),
-              Expanded(child: StatTile(label: 'Cards', value: p.creditCards.length.toDouble(), icon: Icons.layers_outlined)),
+              Expanded(child: StatTile(label: 'Cards', value: p.creditCards.length.toDouble(), icon: Icons.layers_outlined, isCurrency: false)),
             ]),
             const SizedBox(height: 20),
           ],
