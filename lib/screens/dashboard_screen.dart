@@ -118,7 +118,7 @@ class _MiniPill extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(label, style: GoogleFonts.inter(fontSize: 10, color: Colors.white54, fontWeight: FontWeight.w500)),
         const SizedBox(height: 4),
-        Text(shortPesoFmt.format(budget - spent), style: GoogleFonts.plusJakartaSans(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w700)),
+        Text(pesoFmt.format(budget - spent), style: GoogleFonts.plusJakartaSans(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w700)),
         const SizedBox(height: 5),
         ClipRRect(borderRadius: BorderRadius.circular(3), child: LinearProgressIndicator(value: pct, backgroundColor: Colors.white.withOpacity(0.1), valueColor: AlwaysStoppedAnimation(color), minHeight: 3)),
       ]),
@@ -197,7 +197,7 @@ class _DonutLegend extends StatelessWidget {
       const SizedBox(width: 8),
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(label, style: GoogleFonts.inter(fontSize: 11, color: colors.textSecondary, fontWeight: FontWeight.w500)),
-        Text('$pct%  ${shortPesoFmt.format(value)}', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: colors.textPrimary)),
+        Text('$pct%  ${pesoFmt.format(value)}', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: colors.textPrimary)),
       ]),
     ]);
   }
@@ -240,6 +240,22 @@ class _MonthlyBarChart extends StatelessWidget {
         maxY: maxVal > 0 ? maxVal * 1.3 : 100,
         gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (_) => FlLine(color: colors.divider, strokeWidth: 1)),
         borderData: FlBorderData(show: false),
+        barTouchData: BarTouchData(
+          enabled: true,
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipColor: (touchedBarGroup) => colors.isDark ? Colors.grey[900]! : Colors.grey[100]!,
+            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+              return BarTooltipItem(
+                pesoFmt.format(rod.toY),
+                TextStyle(
+                  color: colors.isDark ? Colors.white : Colors.black87,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              );
+            },
+          ),
+        ),
         titlesData: FlTitlesData(
           leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),

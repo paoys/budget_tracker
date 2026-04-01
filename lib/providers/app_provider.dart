@@ -275,5 +275,19 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> deleteCreditCardTransaction(String cardId, String txId) async {
+    final idx = _creditCards.indexWhere((c) => c.id == cardId);
+    if (idx >= 0) {
+      final txIdx = _creditCards[idx].transactions.indexWhere((t) => t.id == txId);
+      if (txIdx >= 0) {
+        final tx = _creditCards[idx].transactions[txIdx];
+        _creditCards[idx].balance -= tx.amount;
+        _creditCards[idx].transactions.removeAt(txIdx);
+        await _save();
+        notifyListeners();
+      }
+    }
+  }
+
   String newId() => _uuid.v4();
 }

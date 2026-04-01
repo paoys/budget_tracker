@@ -241,7 +241,36 @@ class _TxTile extends StatelessWidget {
       ])),
       Text(pesoFmt.format(tx.amount), style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: tx.isPaid ? kSuccessColor : colors.textPrimary)),
       if (!tx.isPaid) ...[const SizedBox(width: 8), GestureDetector(onTap: () => provider.markCreditCardPaid(cardId, tx.id), child: Icon(Icons.check_circle_outline_rounded, size: 18, color: kSuccessColor))],
+      const SizedBox(width: 8),
+      GestureDetector(
+        onTap: () => _confirmDelete(context),
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(color: kDangerColor.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
+          child: const Icon(Icons.close, size: 14, color: kDangerColor),
+        ),
+      ),
     ]));
+  }
+
+  void _confirmDelete(BuildContext ctx) {
+    showDialog(
+      context: ctx,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Transaction'),
+        content: const Text('Remove this charge?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              provider.deleteCreditCardTransaction(cardId, tx.id);
+              Navigator.pop(ctx);
+            },
+            child: Text('Delete', style: TextStyle(color: kDangerColor)),
+          ),
+        ],
+      ),
+    );
   }
 }
 

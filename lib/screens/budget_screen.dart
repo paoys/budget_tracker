@@ -121,7 +121,7 @@ class _MiniStat extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(label, style: GoogleFonts.inter(fontSize: 10, color: colors.textMuted, fontWeight: FontWeight.w600, letterSpacing: 0.3)),
         const SizedBox(height: 6),
-        Text(shortPesoFmt.format(value), style: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.w700, color: color, letterSpacing: -0.3)),
+        Text(pesoFmt.format(value), style: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.w700, color: color, letterSpacing: -0.3)),
       ]),
     );
   }
@@ -151,9 +151,9 @@ class _CategorySection extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(label, style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w700, color: colors.textPrimary)),
-              Text('${shortPesoFmt.format(totalSpent)} spent of ${shortPesoFmt.format(budget)}', style: GoogleFonts.inter(fontSize: 11, color: colors.textSecondary)),
+              Text('${pesoFmt.format(totalSpent)} spent of ${pesoFmt.format(budget)}', style: GoogleFonts.inter(fontSize: 11, color: colors.textSecondary)),
             ])),
-            Text(shortPesoFmt.format(budget - totalSpent), style: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.w700, color: budget - totalSpent < 0 ? kDangerColor : c)),
+            Text(pesoFmt.format(budget - totalSpent), style: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.w700, color: budget - totalSpent < 0 ? kDangerColor : c)),
           ]),
           const SizedBox(height: 10),
           BudgetProgressBar(label: '', spent: totalSpent, budget: budget, color: c, compact: true),
@@ -178,15 +178,15 @@ class _CategorySection extends StatelessWidget {
                 BudgetProgressBar(label: '', spent: subSpent, budget: sub.budgetAmount, color: c, compact: true),
                 const SizedBox(height: 4),
                 Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Text('${shortPesoFmt.format(subSpent)} used', style: GoogleFonts.inter(fontSize: 10, color: colors.textMuted)),
-                  Text('${shortPesoFmt.format(sub.budgetAmount - subSpent)} left', style: GoogleFonts.inter(fontSize: 10, color: sub.budgetAmount - subSpent < 0 ? kDangerColor : colors.textMuted)),
+                  Text('${pesoFmt.format(subSpent)} used', style: GoogleFonts.inter(fontSize: 10, color: colors.textMuted)),
+                  Text('${pesoFmt.format(sub.budgetAmount - subSpent)} left', style: GoogleFonts.inter(fontSize: 10, color: sub.budgetAmount - subSpent < 0 ? kDangerColor : colors.textMuted)),
                 ]),
               ]))]),
             ]);
           }),
         if (totalAllocated < budget) ...[
           const SizedBox(height: 10),
-          Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: colors.surface2, borderRadius: BorderRadius.circular(8)), child: Row(children: [Icon(Icons.info_outline, size: 12, color: colors.textMuted), const SizedBox(width: 6), Text('${shortPesoFmt.format(budget - totalAllocated)} unallocated', style: GoogleFonts.inter(fontSize: 11, color: colors.textMuted))])),
+          Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: colors.surface2, borderRadius: BorderRadius.circular(8)), child: Row(children: [Icon(Icons.info_outline, size: 12, color: colors.textMuted), const SizedBox(width: 6), Text('${pesoFmt.format(budget - totalAllocated)} unallocated', style: GoogleFonts.inter(fontSize: 11, color: colors.textMuted))])),
         ],
       ])),
     ]));
@@ -194,7 +194,7 @@ class _CategorySection extends StatelessWidget {
 
   void _editSub(BuildContext ctx, AppProvider p, BudgetSubCategory sub) {
     final nameCtrl = TextEditingController(text: sub.name);
-    final amountCtrl = TextEditingController(text: sub.budgetAmount.toStringAsFixed(0));
+    final amountCtrl = TextEditingController(text: sub.budgetAmount.toStringAsFixed(2));
     final formKey = GlobalKey<FormState>();
     showModalBottomSheet(context: ctx, isScrollControlled: true, builder: (ctx) => Padding(
       padding: EdgeInsets.only(left: 20, right: 20, top: 4, bottom: MediaQuery.of(ctx).viewInsets.bottom + 24),

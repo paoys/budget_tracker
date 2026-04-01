@@ -80,6 +80,7 @@ class IncomeScreen extends StatelessWidget {
               child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: colors.surface2, borderRadius: BorderRadius.circular(8), border: Border.all(color: colors.divider)), child: Row(children: [Icon(Icons.tune_rounded, size: 14, color: colors.textSecondary), const SizedBox(width: 5), Text('Adjust', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: colors.textSecondary))])),
             ),
           ]),
+          const SizedBox(height: 12),
           AppCard(child: Column(children: [
             _SplitRow('Needs', p.settings.needsPercent, p.needsBudget, colors.needs),
             Divider(color: colors.divider, height: 20),
@@ -194,7 +195,7 @@ class _IncomePill extends StatelessWidget {
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle)), const SizedBox(width: 5), Text(label, style: GoogleFonts.inter(fontSize: 10, color: Colors.white54))]),
       const SizedBox(height: 4),
-      Text(shortPesoFmt.format(amount), style: GoogleFonts.plusJakartaSans(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w700)),
+      Text(pesoFmt.format(amount), style: GoogleFonts.plusJakartaSans(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w700)),
     ]),
   ));
 }
