@@ -157,7 +157,14 @@ class _CreditCardWidget extends StatelessWidget {
         const SizedBox(height: 10),
         Text('Transactions', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: Theme.of(context).extension<AppColors>()!.textMuted, letterSpacing: 0.5)),
         const SizedBox(height: 8),
-        ...card.transactions.take(5).map((tx) => _TxTile(tx: tx, cardId: card.id, provider: p)),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 300),
+          child: SingleChildScrollView(
+            child: Column(
+              children: card.transactions.map((tx) => _TxTile(tx: tx, cardId: card.id, provider: p)).toList(),
+            ),
+          ),
+        ),
       ],
     ]));
   }
