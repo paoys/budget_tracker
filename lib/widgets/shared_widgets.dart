@@ -58,7 +58,7 @@ class StatTile extends StatelessWidget {
     final accent = accentColor ?? colors.textMuted;
     final valueText = isCurrency
       ? pesoFmt.format(value)
-      : (value == value.truncateToDouble() ? value.toInt().toString() : value.toStringAsFixed(1));
+      : (value == value.truncateToDouble() ? value.toInt().toString() : value.toStringAsFixed(2));
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -95,8 +95,8 @@ class BudgetProgressBar extends StatelessWidget {
       if (label.isNotEmpty) Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Text(label, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w500, color: colors.textPrimary)),
         Row(children: [
-          Text(shortPesoFmt.format(spent), style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: over ? kDangerColor : colors.textPrimary)),
-          Text(' / ${shortPesoFmt.format(budget)}', style: GoogleFonts.inter(fontSize: 12, color: colors.textSecondary)),
+          Text(pesoFmt.format(spent), style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: over ? kDangerColor : colors.textPrimary)),
+          Text(' / ${pesoFmt.format(budget)}', style: GoogleFonts.inter(fontSize: 12, color: colors.textSecondary)),
         ]),
       ]),
       SizedBox(height: label.isEmpty ? 0 : 8),
@@ -120,7 +120,7 @@ class BudgetProgressBar extends StatelessWidget {
         const SizedBox(height: 5),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Text('${(pct * 100).toStringAsFixed(0)}% used', style: GoogleFonts.inter(fontSize: 10, color: colors.textMuted, fontWeight: FontWeight.w500)),
-          Text(over ? 'Over by ${shortPesoFmt.format(spent - budget)}' : '${shortPesoFmt.format(budget - spent)} left',
+          Text(over ? 'Over by ${pesoFmt.format(spent - budget)}' : '${pesoFmt.format(budget - spent)} left',
             style: GoogleFonts.inter(fontSize: 10, color: over ? kDangerColor : colors.textMuted, fontWeight: FontWeight.w500)),
         ]),
       ],
@@ -201,7 +201,12 @@ Widget buildAmountField({required TextEditingController controller, String label
     ),
     validator: (v) {
       if (v == null || v.trim().isEmpty) return 'Required';
-      if (double.tryParse(v.trim()) == null) return 'Enter a valid number';
+      final parsed = double.tryParse(v.trim());
+      if (parsed == null) return 'Enter a valid number';
+      // Check for maximum 2 decimal places
+      final parts = v.trim().split('.');
+      if (parts.length > 2) return 'Invalid number format';
+      if (parts.length == 2 && parts[1].length > 2) return 'Maximum 2 decimal places';
       return null;
     },
   );
