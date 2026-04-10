@@ -24,6 +24,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'add_expenses_fab',
         onPressed: () => _showAddExpense(context),
         backgroundColor: colors.textPrimary,
         foregroundColor: colors.bg,

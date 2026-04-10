@@ -11,6 +11,7 @@ import 'screens/budget_screen.dart';
 import 'screens/expenses_screen.dart';
 import 'screens/savings_screen.dart';
 import 'screens/credit_card_screen.dart';
+import 'screens/recurring_screen.dart';
 import 'screens/settings_screen.dart';
 
 void main() async {
@@ -49,20 +50,19 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
 
   static const _items = [
     _NavItem(icon: Icons.space_dashboard_outlined, activeIcon: Icons.space_dashboard_rounded, label: 'Home'),
-    _NavItem(icon: Icons.account_balance_wallet_outlined, activeIcon: Icons.account_balance_wallet_rounded, label: 'Income'),
-    _NavItem(icon: Icons.donut_large_outlined, activeIcon: Icons.donut_large_rounded, label: 'Budget'),
     _NavItem(icon: Icons.receipt_long_outlined, activeIcon: Icons.receipt_long_rounded, label: 'Expenses'),
+    _NavItem(icon: Icons.donut_large_outlined, activeIcon: Icons.donut_large_rounded, label: 'Budget'),
     _NavItem(icon: Icons.savings_outlined, activeIcon: Icons.savings_rounded, label: 'Savings'),
     _NavItem(icon: Icons.credit_card_outlined, activeIcon: Icons.credit_card_rounded, label: 'Cards'),
   ];
 
   static const _screens = [
-    DashboardScreen(), IncomeScreen(), BudgetScreen(),
-    ExpensesScreen(), SavingsScreen(), CreditCardScreen(),
+    DashboardScreen(), ExpensesScreen(), BudgetScreen(),
+    SavingsScreen(), CreditCardScreen(),
   ];
 
   static const _titles = [
-    'Overview', 'Income & Setup', 'Budget', 'Expenses', 'Savings', 'Credit Cards',
+    'Overview', 'Expenses', 'Budget', 'Savings', 'Credit Cards',
   ];
 
   @override
@@ -91,7 +91,9 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<AppColors>()!;
     final p = context.watch<AppProvider>();
-    final dueSoonCount = p.creditCards.where((c) => c.daysUntilDue <= 7 && c.balance > 0).length;
+    final ccDueCount = p.cardsDueSoon.length;
+    final recurringDueCount = p.overdueRecurring.length;
+    final totalAlerts = ccDueCount + recurringDueCount;
 
     return Scaffold(
       appBar: AppBar(
@@ -101,14 +103,42 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
         ]),
         toolbarHeight: 60,
         actions: [
-          if (dueSoonCount > 0)
+          if (totalAlerts > 0)
             Stack(children: [
-              IconButton(onPressed: () => _onTap(5), icon: const Icon(Icons.notifications_outlined, size: 22)),
-              Positioned(top: 8, right: 8, child: Container(width: 8, height: 8, decoration: const BoxDecoration(color: kWarningColor, shape: BoxShape.circle))),
+              IconButton(
+                tooltip: 'Notifications',
+                  onPressed: () => _onTap(4),
+                  icon: const Icon(Icons.notifications_outlined, size: 22)),
+              Positioned(top: 8, right: 8, child: Container(
+                width: 16, height: 16,
+                decoration: const BoxDecoration(color: kWarningColor, shape: BoxShape.circle),
+                child: Center(child: Text('$totalAlerts', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.black))),
+              )),
             ]),
+          // Income shortcut when on Budget tab (index 2)
+          if (_currentIndex == 2)
+            IconButton(
+              tooltip: 'Income & Setup',
+              onPressed: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => ChangeNotifierProvider.value(value: context.read<AppProvider>(), child: const IncomeScreen()))),
+              icon: const Icon(Icons.account_balance_wallet_outlined, size: 22),
+            ),
+          // Recurring shortcut when on Cards tab (index 4)
+          if (_currentIndex == 4)
+            IconButton(
+              tooltip: 'Recurring',
+              onPressed: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => ChangeNotifierProvider.value(value: context.read<AppProvider>(), child: const RecurringScreen()))),
+              icon: const Icon(Icons.repeat_outlined, size: 22),
+            ),
           IconButton(
-            onPressed: () => Navigator.push(context, MaterialPageRoute(
-              builder: (_) => ChangeNotifierProvider.value(value: context.read<AppProvider>(), child: const SettingsScreen()))),
+            tooltip: 'Settings',
+            onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => ChangeNotifierProvider.value(
+                        value: context.read<AppProvider>(),
+                        child: const SettingsScreen()))),
             icon: const Icon(Icons.settings_outlined, size: 22),
           ),
           const SizedBox(width: 4),
@@ -116,8 +146,11 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
       ),
       body: IndexedStack(index: _currentIndex, children: _screens),
       bottomNavigationBar: _BottomBar(
-        currentIndex: _currentIndex, items: _items, controllers: _iconControllers,
-        onTap: _onTap, dueBadgeIndex: 5, hasDue: dueSoonCount > 0,
+        currentIndex: _currentIndex,
+        items: _items,
+        controllers: _iconControllers,
+        onTap: _onTap,
+        badges: {4: ccDueCount > 0},
       ),
     );
   }
@@ -128,9 +161,8 @@ class _BottomBar extends StatelessWidget {
   final List<_NavItem> items;
   final List<AnimationController> controllers;
   final void Function(int) onTap;
-  final int dueBadgeIndex;
-  final bool hasDue;
-  const _BottomBar({required this.currentIndex, required this.items, required this.controllers, required this.onTap, required this.dueBadgeIndex, required this.hasDue});
+  final Map<int, bool> badges;
+  const _BottomBar({required this.currentIndex, required this.items, required this.controllers, required this.onTap, required this.badges});
 
   @override
   Widget build(BuildContext context) {
@@ -140,35 +172,45 @@ class _BottomBar extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: 60,
-          child: Row(children: List.generate(items.length, (i) {
-            final sel = currentIndex == i;
-            final item = items[i];
-            return Expanded(child: GestureDetector(
-              onTap: () => onTap(i),
-              behavior: HitTestBehavior.opaque,
-              child: AnimatedBuilder(
-                animation: controllers[i],
-                builder: (ctx, _) {
-                  final t = controllers[i].value;
-                  return Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    SizedBox(height: 24, child: Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        width: sel ? 40 : 28, height: sel ? 24 : 0,
-                        decoration: sel ? BoxDecoration(color: colors.textPrimary.withOpacity(0.1), borderRadius: BorderRadius.circular(13)) : null,
-                      ),
-                      Icon(sel ? item.activeIcon : item.icon, size: 20, color: Color.lerp(colors.textMuted, colors.textPrimary, t)),
-                      if (i == dueBadgeIndex && hasDue)
-                        Positioned(top: -2, right: -2, child: Container(width: 6, height: 6, decoration: const BoxDecoration(color: kWarningColor, shape: BoxShape.circle))),
-                    ])),
-                    const SizedBox(height: 3),
-                    Text(item.label, style: GoogleFonts.inter(fontSize: 10, fontWeight: sel ? FontWeight.w700 : FontWeight.w400, color: Color.lerp(colors.textMuted, colors.textPrimary, t))),
-                  ]);
-                },
-              ),
-            ));
-          })),
+          height: 72,
+          child: Row(
+            children: List.generate(items.length, (i) {
+              final sel = currentIndex == i;
+              final item = items[i];
+              final hasBadge = badges[i] ?? false;
+              return Expanded(child: GestureDetector(
+                onTap: () => onTap(i),
+                behavior: HitTestBehavior.opaque,
+                child: AnimatedBuilder(
+                  animation: controllers[i],
+                  builder: (ctx, _) {
+                    final t = controllers[i].value;
+                    return Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Stack(children: [
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              width: 36,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                color: sel
+                                    ? colors.textPrimary.withOpacity(0.1)
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                        Positioned.fill(child: Center(child: Stack(clipBehavior: Clip.none, children: [
+                          Icon(sel ? item.activeIcon : item.icon, size: 19, color: Color.lerp(colors.textMuted, colors.textPrimary, t)),
+                          if (hasBadge) Positioned(top: -2, right: -2, child: Container(width: 6, height: 6, decoration: const BoxDecoration(color: kWarningColor, shape: BoxShape.circle))),
+                        ]))),
+                      ]),
+                      const SizedBox(height: 3),
+                      Text(item.label, style: GoogleFonts.inter(fontSize: 9, fontWeight: sel ? FontWeight.w700 : FontWeight.w400, color: Color.lerp(colors.textMuted, colors.textPrimary, t))),
+                    ]);
+                  },
+                ),
+              ));
+            }),
+          ),
         ),
       ),
     );
