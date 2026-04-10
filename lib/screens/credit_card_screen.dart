@@ -183,7 +183,7 @@ class _CreditCardWidgetState extends State<_CreditCardWidget> {
             const Divider(height: 14),
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
               Text('Current period (not yet due)', style: GoogleFonts.inter(fontSize: 11, color: colors.textMuted, fontWeight: FontWeight.w500)),
-              Text(pesoFmt.format(statTxs.fold(0.0, (s, t) => s + t.amount)),
+              Text(pesoFmt.format(statTxs.where((t) => !t.isPaid).fold(0.0, (s, t) => s + t.amount)),
                 style: GoogleFonts.inter(fontSize: 11, color: colors.textSecondary, fontWeight: FontWeight.w600)),
             ]),
           ],

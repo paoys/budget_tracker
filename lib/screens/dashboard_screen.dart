@@ -368,7 +368,7 @@ class _DueSoonCard extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 8),
           child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              // Text(c.name, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: Theme.of(context).extension<AppColors>()!.textPrimary)),
+              Text(c.name, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: Theme.of(context).extension<AppColors>()!.textPrimary)),
               Text(
                 'Due ${dateFmt.format(c.nextDueDate)} · ${c.daysUntilDue} days left\n'
                 'Statement: ${dateFmt.format(c.lastStatementDate)} → ${dateFmt.format(c.nextStatementDate)}',
