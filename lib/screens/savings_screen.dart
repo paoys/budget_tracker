@@ -18,6 +18,7 @@ class SavingsScreen extends StatelessWidget {
 
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'add_savings_fab',
         onPressed: () => _showAddAccount(context),
         backgroundColor: colors.textPrimary,
         foregroundColor: colors.bg,

@@ -16,7 +16,19 @@ class IncomeScreen extends StatelessWidget {
     final colors = Theme.of(context).extension<AppColors>()!;
 
     return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('BudgetWise', style: GoogleFonts.plusJakartaSans(fontSize: 11, fontWeight: FontWeight.w600, color: colors.textMuted, letterSpacing: 1)),
+          Text('Income & Setup', style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w700, color: colors.textPrimary, letterSpacing: -0.3)),
+        ]),
+        toolbarHeight: 60,
+      ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'add_income_fab',
         onPressed: () => _showAddIncome(context),
         backgroundColor: colors.textPrimary,
         foregroundColor: colors.bg,

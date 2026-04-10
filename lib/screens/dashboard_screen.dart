@@ -18,6 +18,7 @@ class DashboardScreen extends StatelessWidget {
     if (p.totalIncome == 0) {
       return const EmptyState(icon: Icons.account_balance_wallet_outlined, title: 'No income yet', message: 'Add your income in the Income tab to get started with budgeting.');
     }
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
       children: [
@@ -29,7 +30,10 @@ class DashboardScreen extends StatelessWidget {
         const SizedBox(height: 16),
         _BudgetProgressCard(p: p),
         if (p.expenses.isNotEmpty) ...[const SizedBox(height: 16), _MonthlyBarChart(p: p)],
-        if (p.creditCards.any((c) => c.daysUntilDue <= 7 && c.balance > 0)) ...[const SizedBox(height: 16), _DueSoonCard()],
+        // ── Recurring Due ──────────────────────────────────────────────────
+        if (p.overdueRecurring.isNotEmpty) ...[const SizedBox(height: 16), _RecurringDueCard(p: p)],
+        // ── CC Due Soon — only shows if statement-period unpaid balance > 0 ──
+        if (p.cardsDueSoon.isNotEmpty) ...[const SizedBox(height: 16), _DueSoonCard(cards: p.cardsDueSoon)],
         const SizedBox(height: 16),
         _RecentExpenses(p: p),
       ],
@@ -37,6 +41,7 @@ class DashboardScreen extends StatelessWidget {
   }
 }
 
+// ─── Hero Card ────────────────────────────────────────────────────────────────
 class _HeroCard extends StatelessWidget {
   final AppProvider p;
   const _HeroCard({required this.p});
@@ -72,7 +77,8 @@ class _HeroCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: isOver ? kDangerColor.withOpacity(0.5) : Colors.white.withOpacity(0.15)),
             ),
-            child: Text(isOver ? '⚠ Over budget' : '✓ On track', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: isOver ? kDangerColor : Colors.white70)),
+            child: Text(isOver ? '⚠ Over budget' : '✓ On track',
+              style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: isOver ? kDangerColor : Colors.white70)),
           ),
         ]),
         const SizedBox(height: 8),
@@ -81,19 +87,21 @@ class _HeroCard extends StatelessWidget {
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Text('${pesoFmt.format(p.totalSpent)} spent', style: GoogleFonts.inter(fontSize: 12, color: Colors.white60)),
-            Text('${pesoFmt.format(p.remainingTotal.abs())} ${isOver ? "over" : "left"}', style: GoogleFonts.inter(fontSize: 12, color: isOver ? kDangerColor : kSuccessColor, fontWeight: FontWeight.w600)),
+            Text('${pesoFmt.format(p.remainingTotal.abs())} ${isOver ? "over" : "left"}',
+              style: GoogleFonts.inter(fontSize: 12, color: isOver ? kDangerColor : kSuccessColor, fontWeight: FontWeight.w600)),
           ]),
           const SizedBox(height: 8),
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(value: spentPct, backgroundColor: Colors.white.withOpacity(0.12), valueColor: AlwaysStoppedAnimation(isOver ? kDangerColor : kSuccessColor), minHeight: 8),
+            child: LinearProgressIndicator(value: spentPct, backgroundColor: Colors.white.withOpacity(0.12),
+              valueColor: AlwaysStoppedAnimation(isOver ? kDangerColor : kSuccessColor), minHeight: 8),
           ),
         ]),
         const SizedBox(height: 16),
         Row(children: [
-          _MiniPill('Needs', p.needsBudget, p.totalNeedsSpent, kNeedsColor),
+          _MiniPill('Needs',   p.needsBudget,   p.totalNeedsSpent,   kNeedsColor),
           const SizedBox(width: 8),
-          _MiniPill('Wants', p.wantsBudget, p.totalWantsSpent, kWantsColor),
+          _MiniPill('Wants',   p.wantsBudget,   p.totalWantsSpent,   kWantsColor),
           const SizedBox(width: 8),
           _MiniPill('Savings', p.savingsBudget, p.totalSavingsSpent, kSavingsColor),
         ]),
@@ -104,8 +112,7 @@ class _HeroCard extends StatelessWidget {
 
 class _MiniPill extends StatelessWidget {
   final String label;
-  final double budget;
-  final double spent;
+  final double budget, spent;
   final Color color;
   const _MiniPill(this.label, this.budget, this.spent, this.color);
 
@@ -120,7 +127,8 @@ class _MiniPill extends StatelessWidget {
         const SizedBox(height: 4),
         Text(pesoFmt.format(budget - spent), style: GoogleFonts.plusJakartaSans(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w700)),
         const SizedBox(height: 5),
-        ClipRRect(borderRadius: BorderRadius.circular(3), child: LinearProgressIndicator(value: pct, backgroundColor: Colors.white.withOpacity(0.1), valueColor: AlwaysStoppedAnimation(color), minHeight: 3)),
+        ClipRRect(borderRadius: BorderRadius.circular(3),
+          child: LinearProgressIndicator(value: pct, backgroundColor: Colors.white.withOpacity(0.1), valueColor: AlwaysStoppedAnimation(color), minHeight: 3)),
       ]),
     ));
   }
@@ -138,6 +146,7 @@ class _ThreeStats extends StatelessWidget {
   ]);
 }
 
+// ─── Donut ────────────────────────────────────────────────────────────────────
 class _SpendingDonut extends StatefulWidget {
   final AppProvider p;
   const _SpendingDonut({required this.p});
@@ -183,8 +192,7 @@ class _SpendingDonutState extends State<_SpendingDonut> {
 
 class _DonutLegend extends StatelessWidget {
   final String label;
-  final double value;
-  final double total;
+  final double value, total;
   final Color color;
   const _DonutLegend(this.label, this.value, this.total, this.color);
 
@@ -203,6 +211,7 @@ class _DonutLegend extends StatelessWidget {
   }
 }
 
+// ─── Budget Progress ──────────────────────────────────────────────────────────
 class _BudgetProgressCard extends StatelessWidget {
   final AppProvider p;
   const _BudgetProgressCard({required this.p});
@@ -221,6 +230,7 @@ class _BudgetProgressCard extends StatelessWidget {
   }
 }
 
+// ─── Monthly Bar ──────────────────────────────────────────────────────────────
 class _MonthlyBarChart extends StatelessWidget {
   final AppProvider p;
   const _MonthlyBarChart({required this.p});
@@ -276,33 +286,105 @@ class _MonthlyBarChart extends StatelessWidget {
   }
 }
 
-class _DueSoonCard extends StatelessWidget {
+// ─── Recurring Due Card ───────────────────────────────────────────────────────
+class _RecurringDueCard extends StatelessWidget {
+  final AppProvider p;
+  const _RecurringDueCard({required this.p});
+
   @override
   Widget build(BuildContext context) {
-    final p = context.watch<AppProvider>();
-    final due = p.creditCards.where((c) => c.daysUntilDue <= 7 && c.balance > 0).toList();
+    final due = p.overdueRecurring;
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: kWarningColor.withOpacity(0.08), borderRadius: BorderRadius.circular(16), border: Border.all(color: kWarningColor.withOpacity(0.3))),
+      decoration: BoxDecoration(
+        color: kNeedsColor.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kNeedsColor.withOpacity(0.3)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.repeat_rounded, size: 16, color: kNeedsColor),
+          const SizedBox(width: 8),
+          Text('Recurring Due', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: kNeedsColor, letterSpacing: 0.5)),
+          const Spacer(),
+          Text('${due.length} item${due.length > 1 ? "s" : ""}', style: GoogleFonts.inter(fontSize: 11, color: kNeedsColor)),
+        ]),
+        const SizedBox(height: 12),
+        ...due.map((t) => Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(children: [
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(t.title, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: Theme.of(context).extension<AppColors>()!.textPrimary)),
+              Text('${t.frequencyLabel} · ${pesoFmt.format(t.amount)}', style: GoogleFonts.inter(fontSize: 11, color: Theme.of(context).extension<AppColors>()!.textSecondary)),
+            ])),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () => p.skipRecurringTemplate(t.id),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), borderRadius: BorderRadius.circular(8), border: Border.all(color: kNeedsColor.withOpacity(0.3))),
+                child: Text('Skip', style: GoogleFonts.inter(fontSize: 12, color: kNeedsColor, fontWeight: FontWeight.w500)),
+              ),
+            ),
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: () => p.processRecurringTemplate(t.id),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(color: kNeedsColor.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+                child: Text('Log Now', style: GoogleFonts.inter(fontSize: 12, color: kNeedsColor, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
+        )),
+      ]),
+    );
+  }
+}
+
+// ─── CC Due Soon Card ─────────────────────────────────────────────────────────
+// Only appears when: unpaid CC txns exist within the current statement period AND due <= 7 days
+class _DueSoonCard extends StatelessWidget {
+  final List<CreditCard> cards;
+  const _DueSoonCard({required this.cards});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: kWarningColor.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kWarningColor.withOpacity(0.3)),
+      ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           const Icon(Icons.notifications_active_rounded, size: 16, color: kWarningColor),
           const SizedBox(width: 8),
           Text('Payment Due Soon', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: kWarningColor, letterSpacing: 0.5)),
         ]),
-        const SizedBox(height: 10),
-        ...due.map((c) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(c.name, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: Theme.of(context).extension<AppColors>()!.textPrimary)),
-            Text('Due ${dateFmt.format(c.nextDueDate)} · ${c.daysUntilDue} days left', style: GoogleFonts.inter(fontSize: 11, color: kWarningColor)),
+        const SizedBox(height: 12),
+        ...cards.map((c) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              // Text(c.name, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: Theme.of(context).extension<AppColors>()!.textPrimary)),
+              Text(
+                'Due ${dateFmt.format(c.nextDueDate)} · ${c.daysUntilDue} days left\n'
+                'Statement: ${dateFmt.format(c.lastStatementDate)} → ${dateFmt.format(c.nextStatementDate)}',
+                style: GoogleFonts.inter(fontSize: 11, color: kWarningColor),
+              ),
+            ]),
+            Text(pesoFmt.format(c.currentStatementBalance),
+              style: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.w700, color: kDangerColor)),
           ]),
-          Text(pesoFmt.format(c.balance), style: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.w700, color: kDangerColor)),
-        ]))),
+        )),
       ]),
     );
   }
 }
 
+// ─── Recent Expenses ──────────────────────────────────────────────────────────
 class _RecentExpenses extends StatelessWidget {
   final AppProvider p;
   const _RecentExpenses({required this.p});
@@ -333,17 +415,37 @@ class _ExpenseTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = colors.forCategory(expense.category);
-    return Padding(padding: const EdgeInsets.symmetric(vertical: 9), child: Row(children: [
-      Container(width: 38, height: 38, decoration: BoxDecoration(color: c.withOpacity(colors.isDark ? 0.15 : 0.1), borderRadius: BorderRadius.circular(10)), child: Icon(_catIcon(expense.category), size: 17, color: c)),
-      const SizedBox(width: 12),
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(expense.title, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w500, color: colors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
-        const SizedBox(height: 2),
-        Row(children: [CategoryChip(category: expense.category), const SizedBox(width: 6), Text(shortDateFmt.format(expense.date), style: GoogleFonts.inter(fontSize: 11, color: colors.textMuted))]),
-      ])),
-      Text(pesoFmt.format(expense.amount), style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700, color: colors.textPrimary)),
-    ]));
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      child: Row(children: [
+        Container(
+          width: 38, height: 38,
+          decoration: BoxDecoration(color: c.withOpacity(colors.isDark ? 0.15 : 0.1), borderRadius: BorderRadius.circular(10)),
+          child: Stack(alignment: Alignment.center, children: [
+            Icon(_catIcon(expense.category), size: 17, color: c),
+            if (expense.isRecurring)
+              Positioned(bottom: 2, right: 2, child: Container(
+                width: 10, height: 10,
+                decoration: const BoxDecoration(color: kNeedsColor, shape: BoxShape.circle),
+                child: const Icon(Icons.repeat, size: 7, color: Colors.white),
+              )),
+          ]),
+        ),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(expense.title, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w500, color: colors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 2),
+          Row(children: [
+            CategoryChip(category: expense.category),
+            const SizedBox(width: 6),
+            Text(shortDateFmt.format(expense.date), style: GoogleFonts.inter(fontSize: 11, color: colors.textMuted)),
+          ]),
+        ])),
+        Text(pesoFmt.format(expense.amount), style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700, color: colors.textPrimary)),
+      ]),
+    );
   }
 
-  IconData _catIcon(CategoryType t) => t == CategoryType.needs ? Icons.home_outlined : t == CategoryType.wants ? Icons.shopping_bag_outlined : Icons.savings_outlined;
+  IconData _catIcon(CategoryType t) =>
+    t == CategoryType.needs ? Icons.home_outlined : t == CategoryType.wants ? Icons.shopping_bag_outlined : Icons.savings_outlined;
 }

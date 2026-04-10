@@ -17,6 +17,7 @@ class BudgetScreen extends StatelessWidget {
 
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'add_budget_fab',
         onPressed: () => _showAddSub(context),
         backgroundColor: colors.textPrimary,
         foregroundColor: colors.bg,
