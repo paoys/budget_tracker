@@ -351,7 +351,7 @@ class _TopHero extends StatelessWidget {
           ),
           clipBehavior: Clip.hardEdge,
           child: Image.asset(
-            'images/app_logo.png',
+            'assets/images/app_logo.png',
             fit: BoxFit.contain,
           ),
         ),
@@ -555,7 +555,7 @@ class _GoogleG extends StatelessWidget {
     return SizedBox(
       width: 22,
       height: 22,
-      child: Image.asset('images/google_logo.png', fit: BoxFit.contain),
+      child: Image.asset('assets/images/google_logo.png', fit: BoxFit.contain),
     );
   }
 }
