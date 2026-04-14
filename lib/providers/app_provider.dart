@@ -4,8 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/models.dart';
+import '../services/firestore_service.dart';
 
 const _uuid = Uuid();
+
+enum SyncStatus { idle, syncing, synced, error }
 
 class AppProvider extends ChangeNotifier {
   AppSettings _settings = AppSettings();
@@ -16,6 +19,11 @@ class AppProvider extends ChangeNotifier {
   List<CreditCard> _creditCards = [];
   List<RecurringTemplate> _recurringTemplates = [];
 
+  String? _uid;
+  final FirestoreService _fs = FirestoreService();
+  SyncStatus _syncStatus = SyncStatus.idle;
+  String? _syncError;
+
   AppSettings get settings => _settings;
   List<Income> get incomes => _incomes;
   List<BudgetSubCategory> get subCategories => _subCategories;
@@ -23,257 +31,424 @@ class AppProvider extends ChangeNotifier {
   List<BankAccount> get bankAccounts => _bankAccounts;
   List<CreditCard> get creditCards => _creditCards;
   List<RecurringTemplate> get recurringTemplates => _recurringTemplates;
-
   bool get isDarkMode => _settings.isDarkMode;
+  SyncStatus get syncStatus => _syncStatus;
+  String? get syncError => _syncError;
+  bool get isSignedIn => _uid != null;
 
-  // ─── TOTALS ───────────────────────────────────────────────────────────────
   double get totalIncome => _incomes.fold(0, (s, i) => s + i.amount);
   double get needsBudget => totalIncome * _settings.needsPercent / 100;
   double get wantsBudget => totalIncome * _settings.wantsPercent / 100;
   double get savingsBudget => totalIncome * _settings.savingsPercent / 100;
-  double get totalNeedsSpent => _expensesByCategory(CategoryType.needs);
-  double get totalWantsSpent => _expensesByCategory(CategoryType.wants);
+  double get totalNeedsSpent   => _expensesByCategory(CategoryType.needs);
+  double get totalWantsSpent   => _expensesByCategory(CategoryType.wants);
   double get totalSavingsSpent => _expensesByCategory(CategoryType.savings);
-  double get totalSpent => totalNeedsSpent + totalWantsSpent + totalSavingsSpent;
-  double get remainingNeeds => needsBudget - totalNeedsSpent;
-  double get remainingWants => wantsBudget - totalWantsSpent;
-  double get remainingSavings => savingsBudget - totalSavingsSpent;
-  double get remainingTotal => totalIncome - totalSpent;
+  double get totalSpent     => totalNeedsSpent + totalWantsSpent + totalSavingsSpent;
+  double get remainingNeeds    => needsBudget - totalNeedsSpent;
+  double get remainingWants    => wantsBudget - totalWantsSpent;
+  double get remainingSavings  => savingsBudget - totalSavingsSpent;
+  double get remainingTotal    => totalIncome - totalSpent;
 
   double _expensesByCategory(CategoryType cat) =>
       _expenses.where((e) => e.category == cat).fold(0.0, (s, e) => s + e.amount);
-
-  double subCategorySpent(String subCategoryId) =>
-      _expenses.where((e) => e.subCategoryId == subCategoryId).fold(0.0, (s, e) => s + e.amount);
-
-  double subCategoryBudget(String subCategoryId) {
-    final sub = _subCategories.firstWhere((s) => s.id == subCategoryId,
-        orElse: () => BudgetSubCategory(id: '', name: '', budgetAmount: 0, category: CategoryType.needs));
-    return sub.budgetAmount;
-  }
-
-  List<BudgetSubCategory> subCategoriesByType(CategoryType type) =>
-      _subCategories.where((s) => s.category == type).toList();
-
-  double totalSubBudgetByType(CategoryType type) =>
-      subCategoriesByType(type).fold(0.0, (s, sc) => s + sc.budgetAmount);
-
-  /// CC cards that have unpaid transactions in the current statement period and due within 7 days
+  double subCategorySpent(String id) =>
+      _expenses.where((e) => e.subCategoryId == id).fold(0.0, (s, e) => s + e.amount);
+  double subCategoryBudget(String id) => _subCategories.firstWhere(
+      (s) => s.id == id,
+      orElse: () => BudgetSubCategory(id: '', name: '', budgetAmount: 0, category: CategoryType.needs)).budgetAmount;
+  List<BudgetSubCategory> subCategoriesByType(CategoryType t) =>
+      _subCategories.where((s) => s.category == t).toList();
+  double totalSubBudgetByType(CategoryType t) =>
+      subCategoriesByType(t).fold(0.0, (s, sc) => s + sc.budgetAmount);
   List<CreditCard> get cardsDueSoon =>
       _creditCards.where((c) => c.hasBillDue).toList();
-
-  /// Recurring templates that are due today or overdue and still active
   List<RecurringTemplate> get overdueRecurring =>
       _recurringTemplates.where((t) => t.isActive && t.isDue).toList();
 
   // ─── INIT ─────────────────────────────────────────────────────────────────
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    _loadSettings(prefs);
-    _loadIncomes(prefs);
-    _loadSubCategories(prefs);
-    _loadExpenses(prefs);
-    _loadBankAccounts(prefs);
-    _loadCreditCards(prefs);
-    _loadRecurringTemplates(prefs);
+    _loadFromPrefs(prefs);
     notifyListeners();
   }
 
-  void _loadSettings(SharedPreferences prefs) {
-    final raw = prefs.getString('settings');
-    if (raw != null) { try { _settings = AppSettings.fromJson(json.decode(raw) as Map<String, dynamic>); } catch (_) {} }
+  Future<void> initForUser(String uid) async {
+    // Guard: skip if already initialised for this uid
+    if (_uid == uid && _syncStatus == SyncStatus.synced) return;
+
+    _uid = uid;
+    _setSyncing();
+    notifyListeners();
+
+    try {
+      // Load local cache first so UI is not blank while waiting for Firestore
+      final prefs = await SharedPreferences.getInstance();
+      _loadFromPrefs(prefs);
+      notifyListeners();
+
+      final remote = await _fs.fetchAllUserData(uid);
+
+      if (_hasRemoteData(remote)) {
+        _applyRemoteData(remote);
+        await _saveToPrefs();
+      } else {
+        // First login — push local data up to Firestore
+        await _pushAllToFirestore(uid);
+      }
+
+      _setSynced();
+    } catch (e, st) {
+      debugPrint('initForUser error: $e\n$st');
+      _setSyncError('Sync failed: ${e.toString()}');
+    }
+
+    notifyListeners();
   }
 
-  void _loadIncomes(SharedPreferences prefs) {
-    final raw = prefs.getString('incomes');
-    if (raw != null) { try { _incomes = (json.decode(raw) as List).map((e) => Income.fromJson(e as Map<String, dynamic>)).toList(); } catch (_) {} }
+  void clearUser() {
+    _uid = null;
+    _syncStatus = SyncStatus.idle;
+    _syncError = null;
+    notifyListeners();
   }
 
-  void _loadSubCategories(SharedPreferences prefs) {
-    final raw = prefs.getString('subCategories');
-    if (raw != null) { try { _subCategories = (json.decode(raw) as List).map((e) => BudgetSubCategory.fromJson(e as Map<String, dynamic>)).toList(); } catch (_) {} }
+  bool _hasRemoteData(UserData r) =>
+      r.incomes.isNotEmpty || r.expenses.isNotEmpty ||
+      r.creditCards.isNotEmpty || r.subCategories.isNotEmpty;
+
+  void _applyRemoteData(UserData r) {
+    if (r.settings != null) _settings = r.settings!;
+    _incomes            = r.incomes;
+    _subCategories      = r.subCategories;
+    _expenses           = r.expenses;
+    _bankAccounts       = r.bankAccounts;
+    _creditCards        = r.creditCards;
+    _recurringTemplates = r.recurringTemplates;
   }
 
-  void _loadExpenses(SharedPreferences prefs) {
-    final raw = prefs.getString('expenses');
-    if (raw != null) { try { _expenses = (json.decode(raw) as List).map((e) => Expense.fromJson(e as Map<String, dynamic>)).toList(); } catch (_) {} }
+  Future<void> _pushAllToFirestore(String uid) async {
+    await _fs.saveSettings(uid, _settings);
+    for (final i in _incomes)            await _fs.saveIncome(uid, i);
+    for (final s in _subCategories)      await _fs.saveSubCategory(uid, s);
+    for (final e in _expenses)           await _fs.saveExpense(uid, e);
+    for (final b in _bankAccounts)       await _fs.saveBankAccount(uid, b);
+    for (final c in _creditCards)        await _fs.saveCreditCard(uid, c);
+    for (final r in _recurringTemplates) await _fs.saveRecurringTemplate(uid, r);
   }
 
-  void _loadBankAccounts(SharedPreferences prefs) {
-    final raw = prefs.getString('bankAccounts');
-    if (raw != null) { try { _bankAccounts = (json.decode(raw) as List).map((e) => BankAccount.fromJson(e as Map<String, dynamic>)).toList(); } catch (_) {} }
+  void _setSyncing() { _syncStatus = SyncStatus.syncing; _syncError = null; }
+  void _setSynced()  { _syncStatus = SyncStatus.synced;  _syncError = null; }
+  void _setSyncError(String msg) { _syncStatus = SyncStatus.error; _syncError = msg; }
+
+  void _loadFromPrefs(SharedPreferences prefs) {
+    final sr = prefs.getString('settings');
+    if (sr != null) {
+      try { _settings = AppSettings.fromJson(json.decode(sr) as Map<String, dynamic>); } catch (_) {}
+    }
+    void load<T>(String key, T Function(Map<String, dynamic>) fn, void Function(List<T>) set) {
+      final raw = prefs.getString(key);
+      if (raw == null) return;
+      try {
+        set((json.decode(raw) as List).map((e) => fn(e as Map<String, dynamic>)).toList());
+      } catch (_) {}
+    }
+    load('incomes',            Income.fromJson,            (v) => _incomes = v);
+    load('subCategories',      BudgetSubCategory.fromJson, (v) => _subCategories = v);
+    load('expenses',           Expense.fromJson,           (v) => _expenses = v);
+    load('bankAccounts',       BankAccount.fromJson,       (v) => _bankAccounts = v);
+    load('creditCards',        CreditCard.fromJson,        (v) => _creditCards = v);
+    load('recurringTemplates', RecurringTemplate.fromJson, (v) => _recurringTemplates = v);
   }
 
-  void _loadCreditCards(SharedPreferences prefs) {
-    final raw = prefs.getString('creditCards');
-    if (raw != null) { try { _creditCards = (json.decode(raw) as List).map((e) => CreditCard.fromJson(e as Map<String, dynamic>)).toList(); } catch (_) {} }
-  }
-
-  void _loadRecurringTemplates(SharedPreferences prefs) {
-    final raw = prefs.getString('recurringTemplates');
-    if (raw != null) { try { _recurringTemplates = (json.decode(raw) as List).map((e) => RecurringTemplate.fromJson(e as Map<String, dynamic>)).toList(); } catch (_) {} }
-  }
-
-  Future<void> _save() async {
+  Future<void> _saveToPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('settings', json.encode(_settings.toJson()));
-    await prefs.setString('incomes', json.encode(_incomes.map((e) => e.toJson()).toList()));
-    await prefs.setString('subCategories', json.encode(_subCategories.map((e) => e.toJson()).toList()));
-    await prefs.setString('expenses', json.encode(_expenses.map((e) => e.toJson()).toList()));
-    await prefs.setString('bankAccounts', json.encode(_bankAccounts.map((e) => e.toJson()).toList()));
-    await prefs.setString('creditCards', json.encode(_creditCards.map((e) => e.toJson()).toList()));
+    await prefs.setString('settings',           json.encode(_settings.toJson()));
+    await prefs.setString('incomes',            json.encode(_incomes.map((e) => e.toJson()).toList()));
+    await prefs.setString('subCategories',      json.encode(_subCategories.map((e) => e.toJson()).toList()));
+    await prefs.setString('expenses',           json.encode(_expenses.map((e) => e.toJson()).toList()));
+    await prefs.setString('bankAccounts',       json.encode(_bankAccounts.map((e) => e.toJson()).toList()));
+    await prefs.setString('creditCards',        json.encode(_creditCards.map((e) => e.toJson()).toList()));
     await prefs.setString('recurringTemplates', json.encode(_recurringTemplates.map((e) => e.toJson()).toList()));
   }
 
+  Future<void> _save() => _saveToPrefs();
+
+  /// Fire-and-forget cloud write. Catches and logs errors without crashing.
+  Future<void> _cloud(Future<void> Function(String uid) op) async {
+    final uid = _uid;
+    if (uid == null) return; // Not signed in — offline mode, skip silently
+    try {
+      await op(uid);
+      if (_syncStatus != SyncStatus.syncing) {
+        _setSynced();
+        notifyListeners();
+      }
+    } catch (e, st) {
+      debugPrint('Firestore write error: $e\n$st');
+      _setSyncError('Sync failed');
+      notifyListeners();
+    }
+  }
+
   // ─── SETTINGS ─────────────────────────────────────────────────────────────
-  Future<void> updateSettings(AppSettings s) async { _settings = s; await _save(); notifyListeners(); }
-  Future<void> toggleTheme() async { _settings.isDarkMode = !_settings.isDarkMode; await _save(); notifyListeners(); }
+  Future<void> updateSettings(AppSettings s) async {
+    _settings = s;
+    await _save();
+    await _cloud((uid) => _fs.saveSettings(uid, s));
+    notifyListeners();
+  }
+
+  Future<void> toggleTheme() async {
+    _settings.isDarkMode = !_settings.isDarkMode;
+    await _save();
+    await _cloud((uid) => _fs.saveSettings(uid, _settings));
+    notifyListeners();
+  }
 
   // ─── INCOME ───────────────────────────────────────────────────────────────
-  Future<void> addIncome(Income income) async { _incomes.add(income); await _save(); notifyListeners(); }
-  Future<void> deleteIncome(String id) async { _incomes.removeWhere((i) => i.id == id); await _save(); notifyListeners(); }
+  Future<void> addIncome(Income i) async {
+    _incomes.add(i);
+    await _save();
+    await _cloud((uid) => _fs.saveIncome(uid, i));
+    notifyListeners();
+  }
+
+  Future<void> deleteIncome(String id) async {
+    _incomes.removeWhere((i) => i.id == id);
+    await _save();
+    await _cloud((uid) => _fs.deleteIncome(uid, id));
+    notifyListeners();
+  }
 
   // ─── SUBCATEGORIES ────────────────────────────────────────────────────────
-  Future<void> addSubCategory(BudgetSubCategory sub) async { _subCategories.add(sub); await _save(); notifyListeners(); }
-  Future<void> updateSubCategory(BudgetSubCategory sub) async {
-    final idx = _subCategories.indexWhere((s) => s.id == sub.id);
-    if (idx >= 0) { _subCategories[idx] = sub; await _save(); notifyListeners(); }
+  Future<void> addSubCategory(BudgetSubCategory s) async {
+    _subCategories.add(s);
+    await _save();
+    await _cloud((uid) => _fs.saveSubCategory(uid, s));
+    notifyListeners();
   }
-  Future<void> deleteSubCategory(String id) async { _subCategories.removeWhere((s) => s.id == id); await _save(); notifyListeners(); }
+
+  Future<void> updateSubCategory(BudgetSubCategory s) async {
+    final idx = _subCategories.indexWhere((x) => x.id == s.id);
+    if (idx >= 0) {
+      _subCategories[idx] = s;
+      await _save();
+      await _cloud((uid) => _fs.saveSubCategory(uid, s));
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteSubCategory(String id) async {
+    _subCategories.removeWhere((s) => s.id == id);
+    await _save();
+    await _cloud((uid) => _fs.deleteSubCategory(uid, id));
+    notifyListeners();
+  }
 
   // ─── EXPENSES ─────────────────────────────────────────────────────────────
   Future<void> addExpense(Expense expense) async {
     _expenses.add(expense);
     if (expense.paymentMode == PaymentMode.creditCard && expense.creditCardId != null) {
-      final ccIdx = _creditCards.indexWhere((c) => c.id == expense.creditCardId);
-      if (ccIdx >= 0) {
-        _creditCards[ccIdx].balance += expense.amount;
-        _creditCards[ccIdx].transactions.add(CreditCardTransaction(
-          id: _uuid.v4(), description: expense.title, amount: expense.amount, date: expense.date,
+      final i = _creditCards.indexWhere((c) => c.id == expense.creditCardId);
+      if (i >= 0) {
+        _creditCards[i].balance += expense.amount;
+        _creditCards[i].transactions.add(CreditCardTransaction(
+          id: _uuid.v4(), description: expense.title,
+          amount: expense.amount, date: expense.date,
         ));
-        // Sort by date desc
-        _creditCards[ccIdx].transactions.sort((a, b) => b.date.compareTo(a.date));
+        _creditCards[i].transactions.sort((a, b) => b.date.compareTo(a.date));
+        await _cloud((uid) => _fs.saveCreditCard(uid, _creditCards[i]));
       }
     }
     await _save();
+    await _cloud((uid) => _fs.saveExpense(uid, expense));
     notifyListeners();
   }
 
   Future<void> deleteExpense(String id) async {
-    final expense = _expenses.firstWhere((e) => e.id == id,
-        orElse: () => Expense(id: '', title: '', amount: 0, category: CategoryType.needs, paymentMode: PaymentMode.cash, date: DateTime.now()));
-    if (expense.id.isNotEmpty && expense.paymentMode == PaymentMode.creditCard && expense.creditCardId != null) {
-      final ccIdx = _creditCards.indexWhere((c) => c.id == expense.creditCardId);
-      if (ccIdx >= 0) {
-        _creditCards[ccIdx].balance -= expense.amount;
-        _creditCards[ccIdx].transactions.removeWhere((t) => t.description == expense.title && t.amount == expense.amount);
+    final e = _expenses.firstWhere(
+      (x) => x.id == id,
+      orElse: () => Expense(id: '', title: '', amount: 0, category: CategoryType.needs, paymentMode: PaymentMode.cash, date: DateTime.now()),
+    );
+    if (e.id.isNotEmpty && e.paymentMode == PaymentMode.creditCard && e.creditCardId != null) {
+      final i = _creditCards.indexWhere((c) => c.id == e.creditCardId);
+      if (i >= 0) {
+        _creditCards[i].balance -= e.amount;
+        _creditCards[i].transactions.removeWhere((t) => t.description == e.title && t.amount == e.amount);
+        await _cloud((uid) => _fs.saveCreditCard(uid, _creditCards[i]));
       }
     }
-    _expenses.removeWhere((e) => e.id == id);
+    _expenses.removeWhere((x) => x.id == id);
     await _save();
+    await _cloud((uid) => _fs.deleteExpense(uid, id));
     notifyListeners();
   }
 
   // ─── BANK ACCOUNTS ────────────────────────────────────────────────────────
-  Future<void> addBankAccount(BankAccount account) async { _bankAccounts.add(account); await _save(); notifyListeners(); }
-  Future<void> deleteBankAccount(String id) async { _bankAccounts.removeWhere((a) => a.id == id); await _save(); notifyListeners(); }
+  Future<void> addBankAccount(BankAccount a) async {
+    _bankAccounts.add(a);
+    await _save();
+    await _cloud((uid) => _fs.saveBankAccount(uid, a));
+    notifyListeners();
+  }
+
+  Future<void> deleteBankAccount(String id) async {
+    _bankAccounts.removeWhere((a) => a.id == id);
+    await _save();
+    await _cloud((uid) => _fs.deleteBankAccount(uid, id));
+    notifyListeners();
+  }
+
   Future<void> addBankTransaction(String accountId, BankTransaction tx) async {
-    final idx = _bankAccounts.indexWhere((a) => a.id == accountId);
-    if (idx >= 0) { _bankAccounts[idx].balance += tx.amount; _bankAccounts[idx].transactions.insert(0, tx); await _save(); notifyListeners(); }
+    final i = _bankAccounts.indexWhere((a) => a.id == accountId);
+    if (i >= 0) {
+      _bankAccounts[i].balance += tx.amount;
+      _bankAccounts[i].transactions.insert(0, tx);
+      await _save();
+      await _cloud((uid) => _fs.saveBankAccount(uid, _bankAccounts[i]));
+      notifyListeners();
+    }
   }
 
   // ─── CREDIT CARDS ─────────────────────────────────────────────────────────
-  Future<void> addCreditCard(CreditCard card) async { _creditCards.add(card); await _save(); notifyListeners(); }
-  Future<void> deleteCreditCard(String id) async { _creditCards.removeWhere((c) => c.id == id); await _save(); notifyListeners(); }
+  Future<void> addCreditCard(CreditCard c) async {
+    _creditCards.add(c);
+    await _save();
+    await _cloud((uid) => _fs.saveCreditCard(uid, c));
+    notifyListeners();
+  }
+
+  Future<void> deleteCreditCard(String id) async {
+    _creditCards.removeWhere((c) => c.id == id);
+    await _save();
+    await _cloud((uid) => _fs.deleteCreditCard(uid, id));
+    notifyListeners();
+  }
 
   Future<void> addCreditCardTransaction(String cardId, CreditCardTransaction tx) async {
-    final idx = _creditCards.indexWhere((c) => c.id == cardId);
-    if (idx >= 0) {
-      _creditCards[idx].balance += tx.amount;
-      _creditCards[idx].transactions.add(tx);
-      // Always sort by date desc (latest first)
-      _creditCards[idx].transactions.sort((a, b) => b.date.compareTo(a.date));
+    final i = _creditCards.indexWhere((c) => c.id == cardId);
+    if (i >= 0) {
+      _creditCards[i].balance += tx.amount;
+      _creditCards[i].transactions.add(tx);
+      _creditCards[i].transactions.sort((a, b) => b.date.compareTo(a.date));
       await _save();
+      await _cloud((uid) => _fs.saveCreditCard(uid, _creditCards[i]));
       notifyListeners();
     }
   }
 
   Future<void> markCreditCardPaid(String cardId, String txId) async {
-    final idx = _creditCards.indexWhere((c) => c.id == cardId);
-    if (idx >= 0) {
-      final txIdx = _creditCards[idx].transactions.indexWhere((t) => t.id == txId);
-      if (txIdx >= 0) {
-        final amount = _creditCards[idx].transactions[txIdx].amount;
-        _creditCards[idx].transactions[txIdx].isPaid = true;
-        _creditCards[idx].balance -= amount;
-        // Re-sort
-        _creditCards[idx].transactions.sort((a, b) => b.date.compareTo(a.date));
+    final i = _creditCards.indexWhere((c) => c.id == cardId);
+    if (i >= 0) {
+      final ti = _creditCards[i].transactions.indexWhere((t) => t.id == txId);
+      if (ti >= 0) {
+        _creditCards[i].transactions[ti].isPaid = true;
+        _creditCards[i].balance -= _creditCards[i].transactions[ti].amount;
+        _creditCards[i].transactions.sort((a, b) => b.date.compareTo(a.date));
         await _save();
+        await _cloud((uid) => _fs.saveCreditCard(uid, _creditCards[i]));
         notifyListeners();
       }
     }
   }
 
   Future<void> deleteCreditCardTransaction(String cardId, String txId) async {
-    final idx = _creditCards.indexWhere((c) => c.id == cardId);
-    if (idx >= 0) {
-      final txIdx = _creditCards[idx].transactions.indexWhere((t) => t.id == txId);
-      if (txIdx >= 0) {
-        final tx = _creditCards[idx].transactions[txIdx];
-        if (!tx.isPaid) _creditCards[idx].balance -= tx.amount;
-        _creditCards[idx].transactions.removeAt(txIdx);
+    final i = _creditCards.indexWhere((c) => c.id == cardId);
+    if (i >= 0) {
+      final ti = _creditCards[i].transactions.indexWhere((t) => t.id == txId);
+      if (ti >= 0) {
+        final tx = _creditCards[i].transactions[ti];
+        if (!tx.isPaid) _creditCards[i].balance -= tx.amount;
+        _creditCards[i].transactions.removeAt(ti);
         await _save();
+        await _cloud((uid) => _fs.saveCreditCard(uid, _creditCards[i]));
         notifyListeners();
       }
     }
   }
 
-  // ─── RECURRING TEMPLATES ──────────────────────────────────────────────────
-  Future<void> addRecurringTemplate(RecurringTemplate template) async {
-    _recurringTemplates.add(template);
+  // ─── RECURRING ────────────────────────────────────────────────────────────
+  Future<void> addRecurringTemplate(RecurringTemplate t) async {
+    _recurringTemplates.add(t);
     await _save();
+    await _cloud((uid) => _fs.saveRecurringTemplate(uid, t));
     notifyListeners();
   }
 
-  Future<void> updateRecurringTemplate(RecurringTemplate template) async {
-    final idx = _recurringTemplates.indexWhere((t) => t.id == template.id);
-    if (idx >= 0) { _recurringTemplates[idx] = template; await _save(); notifyListeners(); }
+  Future<void> updateRecurringTemplate(RecurringTemplate t) async {
+    final i = _recurringTemplates.indexWhere((r) => r.id == t.id);
+    if (i >= 0) {
+      _recurringTemplates[i] = t;
+      await _save();
+      await _cloud((uid) => _fs.saveRecurringTemplate(uid, t));
+      notifyListeners();
+    }
   }
 
   Future<void> deleteRecurringTemplate(String id) async {
     _recurringTemplates.removeWhere((t) => t.id == id);
     await _save();
+    await _cloud((uid) => _fs.deleteRecurringTemplate(uid, id));
     notifyListeners();
   }
 
-  /// Log a recurring template as an expense now and update lastProcessed
   Future<void> processRecurringTemplate(String templateId) async {
-    final idx = _recurringTemplates.indexWhere((t) => t.id == templateId);
-    if (idx < 0) return;
-    final t = _recurringTemplates[idx];
+    final i = _recurringTemplates.indexWhere((t) => t.id == templateId);
+    if (i < 0) return;
+    final t = _recurringTemplates[i];
     final now = DateTime.now();
-
     final expense = Expense(
-      id: _uuid.v4(), title: t.title, amount: t.amount, category: t.category,
-      subCategoryId: t.subCategoryId, paymentMode: t.paymentMode, date: now,
-      notes: t.notes, creditCardId: t.creditCardId, isRecurring: true,
+      id: _uuid.v4(), title: t.title, amount: t.amount,
+      category: t.category, subCategoryId: t.subCategoryId,
+      paymentMode: t.paymentMode, date: now, notes: t.notes,
+      creditCardId: t.creditCardId, isRecurring: true,
       recurringFrequency: t.frequency, recurringGroupId: t.id,
     );
     await addExpense(expense);
-
-    _recurringTemplates[idx].lastProcessed = now;
+    _recurringTemplates[i].lastProcessed = now;
     await _save();
+    await _cloud((uid) => _fs.saveRecurringTemplate(uid, _recurringTemplates[i]));
     notifyListeners();
   }
 
-  /// Skip a recurring template occurrence without logging
   Future<void> skipRecurringTemplate(String templateId) async {
-    final idx = _recurringTemplates.indexWhere((t) => t.id == templateId);
-    if (idx >= 0) {
-      _recurringTemplates[idx].lastProcessed = DateTime.now();
+    final i = _recurringTemplates.indexWhere((t) => t.id == templateId);
+    if (i >= 0) {
+      _recurringTemplates[i].lastProcessed = DateTime.now();
       await _save();
+      await _cloud((uid) => _fs.saveRecurringTemplate(uid, _recurringTemplates[i]));
       notifyListeners();
     }
+  }
+
+  Future<void> syncNow() async {
+    final uid = _uid;
+    if (uid == null) return;
+    _setSyncing();
+    notifyListeners();
+    try {
+      await _pushAllToFirestore(uid);
+      _setSynced();
+    } catch (e) {
+      _setSyncError(e.toString());
+    }
+    notifyListeners();
+  }
+
+  Future<void> pullFromCloud() async {
+    final uid = _uid;
+    if (uid == null) return;
+    _setSyncing();
+    notifyListeners();
+    try {
+      final remote = await _fs.fetchAllUserData(uid);
+      _applyRemoteData(remote);
+      await _saveToPrefs();
+      _setSynced();
+    } catch (e) {
+      _setSyncError(e.toString());
+    }
+    notifyListeners();
   }
 
   String newId() => _uuid.v4();

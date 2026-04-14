@@ -16,7 +16,7 @@ class DashboardScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.watch<AppProvider>();
     if (p.totalIncome == 0) {
-      return const EmptyState(icon: Icons.account_balance_wallet_outlined, title: 'No income yet', message: 'Add your income in the Income tab to get started with budgeting.');
+      return const EmptyState(icon: Icons.account_balance_wallet_outlined, title: 'No income yet', message: 'Add your income in the Budget tab to get started with budgeting.');
     }
 
     return ListView(
