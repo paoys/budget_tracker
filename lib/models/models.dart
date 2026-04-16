@@ -268,10 +268,18 @@ class CreditCard {
   /// e.g. if statementDay=25 and dueDay=14, and today is Apr 10:
   ///   - Previous statement closed Mar 25
   ///   - Its payment is due Apr 14
+  /// If Apr 14 has already passed, rolls forward to the next cycle's due date (May 14).
   DateTime get nextDueDate {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     final last = lastStatementDate;
     // Due date falls in the month AFTER the statement cut-off
     DateTime due = DateTime(last.year, last.month + 1, dueDay);
+    // If the due date has already passed, advance to the next statement's due date
+    if (due.isBefore(today)) {
+      final next = nextStatementDate;
+      due = DateTime(next.year, next.month + 1, dueDay);
+    }
     return due;
   }
 
