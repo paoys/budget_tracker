@@ -36,7 +36,17 @@ class AppProvider extends ChangeNotifier {
   String? get syncError => _syncError;
   bool get isSignedIn => _uid != null;
 
-  double get totalIncome => _incomes.fold(0, (s, i) => s + i.amount);
+  /// Incomes that belong to a given month (year+month).
+  List<Income> incomesForMonth(int year, int month) =>
+      _incomes.where((i) => i.date.year == year && i.date.month == month).toList();
+
+  /// Current-month incomes — used for the active budget.
+  List<Income> get currentMonthIncomes {
+    final now = DateTime.now();
+    return incomesForMonth(now.year, now.month);
+  }
+
+  double get totalIncome => currentMonthIncomes.fold(0.0, (s, i) => s + i.amount);
   double get needsBudget => totalIncome * _settings.needsPercent / 100;
   double get wantsBudget => totalIncome * _settings.wantsPercent / 100;
   double get savingsBudget => totalIncome * _settings.savingsPercent / 100;
