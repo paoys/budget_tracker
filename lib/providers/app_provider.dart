@@ -18,6 +18,7 @@ class AppProvider extends ChangeNotifier {
   List<BankAccount> _bankAccounts = [];
   List<CreditCard> _creditCards = [];
   List<RecurringTemplate> _recurringTemplates = [];
+  List<SavingsGoal> _savingsGoals = [];
 
   String? _uid;
   final FirestoreService _fs = FirestoreService();
@@ -31,6 +32,7 @@ class AppProvider extends ChangeNotifier {
   List<BankAccount> get bankAccounts => _bankAccounts;
   List<CreditCard> get creditCards => _creditCards;
   List<RecurringTemplate> get recurringTemplates => _recurringTemplates;
+  List<SavingsGoal> get savingsGoals => _savingsGoals;
   bool get isDarkMode => _settings.isDarkMode;
   SyncStatus get syncStatus => _syncStatus;
   String? get syncError => _syncError;
@@ -83,7 +85,8 @@ class AppProvider extends ChangeNotifier {
   }
 
   Future<void> initForUser(String uid) async {
-    // Guard: skip if already initialised for this uid
+    // Guard: skip only if already fully synced for the exact same uid.
+    // A different uid always triggers a full reload (clearUser was called first).
     if (_uid == uid && _syncStatus == SyncStatus.synced) return;
 
     _uid = uid;
@@ -115,10 +118,32 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void clearUser() {
+  Future<void> clearUser() async {
     _uid = null;
     _syncStatus = SyncStatus.idle;
     _syncError = null;
+
+    // Reset all in-memory data so it doesn't bleed into the next account
+    _settings = AppSettings();
+    _incomes = [];
+    _subCategories = [];
+    _expenses = [];
+    _bankAccounts = [];
+    _creditCards = [];
+    _recurringTemplates = [];
+    _savingsGoals = [];
+
+    // Wipe the local cache so the next login starts clean from Firestore
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('settings');
+    await prefs.remove('incomes');
+    await prefs.remove('subCategories');
+    await prefs.remove('expenses');
+    await prefs.remove('bankAccounts');
+    await prefs.remove('creditCards');
+    await prefs.remove('recurringTemplates');
+    await prefs.remove('savingsGoals');
+
     notifyListeners();
   }
 
@@ -134,6 +159,7 @@ class AppProvider extends ChangeNotifier {
     _bankAccounts       = r.bankAccounts;
     _creditCards        = r.creditCards;
     _recurringTemplates = r.recurringTemplates;
+    _savingsGoals       = r.savingsGoals;
   }
 
   Future<void> _pushAllToFirestore(String uid) async {
@@ -144,6 +170,7 @@ class AppProvider extends ChangeNotifier {
     for (final b in _bankAccounts)       await _fs.saveBankAccount(uid, b);
     for (final c in _creditCards)        await _fs.saveCreditCard(uid, c);
     for (final r in _recurringTemplates) await _fs.saveRecurringTemplate(uid, r);
+    for (final g in _savingsGoals)       await _fs.saveSavingsGoal(uid, g);
   }
 
   void _setSyncing() { _syncStatus = SyncStatus.syncing; _syncError = null; }
@@ -168,6 +195,7 @@ class AppProvider extends ChangeNotifier {
     load('bankAccounts',       BankAccount.fromJson,       (v) => _bankAccounts = v);
     load('creditCards',        CreditCard.fromJson,        (v) => _creditCards = v);
     load('recurringTemplates', RecurringTemplate.fromJson, (v) => _recurringTemplates = v);
+    load('savingsGoals',       SavingsGoal.fromJson,       (v) => _savingsGoals = v);
   }
 
   Future<void> _saveToPrefs() async {
@@ -178,6 +206,7 @@ class AppProvider extends ChangeNotifier {
     await prefs.setString('expenses',           json.encode(_expenses.map((e) => e.toJson()).toList()));
     await prefs.setString('bankAccounts',       json.encode(_bankAccounts.map((e) => e.toJson()).toList()));
     await prefs.setString('creditCards',        json.encode(_creditCards.map((e) => e.toJson()).toList()));
+    await prefs.setString('savingsGoals',        json.encode(_savingsGoals.map((e) => e.toJson()).toList()));
     await prefs.setString('recurringTemplates', json.encode(_recurringTemplates.map((e) => e.toJson()).toList()));
   }
 
@@ -462,4 +491,141 @@ class AppProvider extends ChangeNotifier {
   }
 
   String newId() => _uuid.v4();
+
+  // ─── SAVINGS GOALS ────────────────────────────────────────────────────────
+
+  /// Total amount contributed across all active goals.
+  double get totalGoalsSaved =>
+      _savingsGoals.fold(0.0, (s, g) => s + g.savedAmount);
+
+  /// Goals with an upcoming deadline (within 30 days, not completed).
+  List<SavingsGoal> get goalsNearingDeadline {
+    final cutoff = DateTime.now().add(const Duration(days: 30));
+    return _savingsGoals
+        .where((g) => !g.isCompleted && g.targetDate != null && g.targetDate!.isBefore(cutoff))
+        .toList()
+      ..sort((a, b) => a.targetDate!.compareTo(b.targetDate!));
+  }
+
+  Future<void> addSavingsGoal(SavingsGoal goal) async {
+    _savingsGoals.add(goal);
+    await _save();
+    await _cloud((uid) => _fs.saveSavingsGoal(uid, goal));
+    notifyListeners();
+  }
+
+  Future<void> updateSavingsGoal(SavingsGoal goal) async {
+    final idx = _savingsGoals.indexWhere((g) => g.id == goal.id);
+    if (idx >= 0) {
+      _savingsGoals[idx] = goal;
+      await _save();
+      await _cloud((uid) => _fs.saveSavingsGoal(uid, goal));
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteSavingsGoal(String id) async {
+    _savingsGoals.removeWhere((g) => g.id == id);
+    await _save();
+    await _cloud((uid) => _fs.deleteSavingsGoal(uid, id));
+    notifyListeners();
+  }
+
+  /// Add a contribution to a goal. Optionally also logs a BankTransaction
+  /// if [fromAccountId] is provided (deduct from account balance).
+  Future<void> contributeToGoal({
+    required String goalId,
+    required double amount,
+    required String note,
+    String? fromAccountId,
+  }) async {
+    final idx = _savingsGoals.indexWhere((g) => g.id == goalId);
+    if (idx < 0) return;
+
+    // Add contribution record
+    final contrib = GoalContribution(
+      id: newId(),
+      goalId: goalId,
+      amount: amount,
+      note: note,
+      date: DateTime.now(),
+    );
+    _savingsGoals[idx].contributions.insert(0, contrib);
+    _savingsGoals[idx].savedAmount =
+        (_savingsGoals[idx].savedAmount + amount).clamp(0.0, double.infinity);
+
+    // Auto-complete if target reached
+    if (_savingsGoals[idx].savedAmount >= _savingsGoals[idx].targetAmount) {
+      _savingsGoals[idx].isCompleted = true;
+    }
+
+    // Optionally deduct from linked bank account
+    if (fromAccountId != null) {
+      final accIdx = _bankAccounts.indexWhere((a) => a.id == fromAccountId);
+      if (accIdx >= 0) {
+        _bankAccounts[accIdx].balance -= amount;
+        _bankAccounts[accIdx].transactions.insert(
+          0,
+          BankTransaction(
+            id: newId(),
+            description: 'Savings: ${_savingsGoals[idx].name}',
+            amount: -amount,
+            date: DateTime.now(),
+          ),
+        );
+        await _cloud((uid) => _fs.saveBankAccount(uid, _bankAccounts[accIdx]));
+      }
+    }
+
+    await _save();
+    await _cloud((uid) => _fs.saveSavingsGoal(uid, _savingsGoals[idx]));
+    notifyListeners();
+  }
+
+  /// Withdraw from a goal (e.g. goal cancelled, or funds redirected).
+  Future<void> withdrawFromGoal({
+    required String goalId,
+    required double amount,
+    required String note,
+    String? toAccountId,
+  }) async {
+    final idx = _savingsGoals.indexWhere((g) => g.id == goalId);
+    if (idx < 0) return;
+
+    final actual = amount.clamp(0.0, _savingsGoals[idx].savedAmount);
+    final contrib = GoalContribution(
+      id: newId(),
+      goalId: goalId,
+      amount: -actual,
+      note: note.isEmpty ? 'Withdrawal' : note,
+      date: DateTime.now(),
+    );
+    _savingsGoals[idx].contributions.insert(0, contrib);
+    _savingsGoals[idx].savedAmount -= actual;
+    if (_savingsGoals[idx].savedAmount < _savingsGoals[idx].targetAmount) {
+      _savingsGoals[idx].isCompleted = false;
+    }
+
+    if (toAccountId != null) {
+      final accIdx = _bankAccounts.indexWhere((a) => a.id == toAccountId);
+      if (accIdx >= 0) {
+        _bankAccounts[accIdx].balance += actual;
+        _bankAccounts[accIdx].transactions.insert(
+          0,
+          BankTransaction(
+            id: newId(),
+            description: 'From goal: ${_savingsGoals[idx].name}',
+            amount: actual,
+            date: DateTime.now(),
+          ),
+        );
+        await _cloud((uid) => _fs.saveBankAccount(uid, _bankAccounts[accIdx]));
+      }
+    }
+
+    await _save();
+    await _cloud((uid) => _fs.saveSavingsGoal(uid, _savingsGoals[idx]));
+    notifyListeners();
+  }
+
 }

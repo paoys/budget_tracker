@@ -34,6 +34,7 @@ class DashboardScreen extends StatelessWidget {
         if (p.overdueRecurring.isNotEmpty) ...[const SizedBox(height: 16), _RecurringDueCard(p: p)],
         // ── CC Due Soon — only shows if statement-period unpaid balance > 0 ──
         if (p.cardsDueSoon.isNotEmpty) ...[const SizedBox(height: 16), _DueSoonCard(cards: p.cardsDueSoon)],
+        if (p.goalsNearingDeadline.isNotEmpty) ...[const SizedBox(height: 16), _GoalsDeadlineCard(p: p)],
         const SizedBox(height: 16),
         _RecentExpenses(p: p),
       ],
@@ -448,4 +449,67 @@ class _ExpenseTile extends StatelessWidget {
 
   IconData _catIcon(CategoryType t) =>
     t == CategoryType.needs ? Icons.home_outlined : t == CategoryType.wants ? Icons.shopping_bag_outlined : Icons.savings_outlined;
+}
+
+// ── Goals Deadline Card (injected into dashboard) ─────────────────────────────
+class _GoalsDeadlineCard extends StatelessWidget {
+  final AppProvider p;
+  const _GoalsDeadlineCard({required this.p});
+
+  @override
+  Widget build(BuildContext context) {
+    final goals  = p.goalsNearingDeadline;
+    final colors = Theme.of(context).extension<AppColors>()!;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: kSavingsColor.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kSavingsColor.withOpacity(0.3)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.flag_rounded, size: 15, color: kSavingsColor),
+          const SizedBox(width: 8),
+          Text('Savings Goal${goals.length > 1 ? "s" : ""} Nearing Deadline',
+              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: kSavingsColor, letterSpacing: 0.3)),
+        ]),
+        const SizedBox(height: 12),
+        ...goals.take(3).map((g) {
+          final pct  = g.progressPct;
+          final days = g.daysRemaining ?? 0;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Text(g.emoji, style: const TextStyle(fontSize: 16)),
+                const SizedBox(width: 8),
+                Expanded(child: Text(g.name,
+                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: colors.textPrimary),
+                    overflow: TextOverflow.ellipsis)),
+                Text(
+                  days < 0 ? 'OVERDUE' : days == 0 ? 'Due today' : '${days}d left',
+                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700,
+                      color: days <= 0 ? kDangerColor : kWarningColor),
+                ),
+              ]),
+              const SizedBox(height: 5),
+              Row(children: [
+                Expanded(child: Stack(children: [
+                  Container(height: 5, decoration: BoxDecoration(color: colors.surface2, borderRadius: BorderRadius.circular(10))),
+                  FractionallySizedBox(widthFactor: pct, child: Container(height: 5, decoration: BoxDecoration(color: kSavingsColor, borderRadius: BorderRadius.circular(10)))),
+                ])),
+                const SizedBox(width: 10),
+                Text('${(pct * 100).toStringAsFixed(0)}%',
+                    style: GoogleFonts.inter(fontSize: 11, color: kSavingsColor, fontWeight: FontWeight.w600)),
+              ]),
+            ]),
+          );
+        }),
+        if (goals.length > 3)
+          Text('+${goals.length - 3} more goals', style: GoogleFonts.inter(fontSize: 11, color: colors.textMuted)),
+      ]),
+    );
+  }
 }

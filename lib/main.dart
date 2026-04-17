@@ -70,9 +70,13 @@ class _AuthGateState extends State<_AuthGate> {
   void initState() {
     super.initState();
     // When auth state changes, trigger data sync in AppProvider
-    FirebaseAuth.instance.authStateChanges().listen((user) {
+    FirebaseAuth.instance.authStateChanges().listen((user) async {
       final appProvider = context.read<AppProvider>();
       if (user != null) {
+        // Always clear stale data first, then load the new user's data.
+        // clearUser() wipes both in-memory state and the local prefs cache,
+        // preventing the previous account's data from bleeding into the new one.
+        await appProvider.clearUser();
         appProvider.initForUser(user.uid);
       } else {
         appProvider.clearUser();
