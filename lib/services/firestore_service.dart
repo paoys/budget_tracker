@@ -69,7 +69,7 @@ class FirestoreService {
   Future<void> deleteRecurringTemplate(String uid, String id)          => remove(uid, 'recurringTemplates', id);
   Future<List<RecurringTemplate>> fetchRecurringTemplates(String uid)  => _fetch(uid, 'recurringTemplates', RecurringTemplate.fromJson);
 
-  // ── Full user data fetch — FIXED: sequential to avoid Future.wait cast bug ─
+  // ── Full user data fetch ────────────────────────────────────────────────────
   Future<UserData> fetchAllUserData(String uid) async {
     final settings           = await fetchSettings(uid);
     final incomes            = await fetchIncomes(uid);
@@ -78,6 +78,7 @@ class FirestoreService {
     final bankAccounts       = await fetchBankAccounts(uid);
     final creditCards        = await fetchCreditCards(uid);
     final recurringTemplates = await fetchRecurringTemplates(uid);
+    final savingsGoals       = await fetchSavingsGoals(uid);
 
     return UserData(
       settings:           settings,
@@ -87,8 +88,14 @@ class FirestoreService {
       bankAccounts:       bankAccounts,
       creditCards:        creditCards,
       recurringTemplates: recurringTemplates,
+      savingsGoals:       savingsGoals,
     );
   }
+
+  // ── Savings Goals ──────────────────────────────────────────────────────────
+  Future<void> saveSavingsGoal(String uid, SavingsGoal g)  => upsert(uid, 'savings_goals', g.id, g.toJson());
+  Future<void> deleteSavingsGoal(String uid, String id)    => remove(uid, 'savings_goals', id);
+  Future<List<SavingsGoal>> fetchSavingsGoals(String uid)  => _fetch(uid, 'savings_goals', SavingsGoal.fromJson);
 }
 
 class UserData {
@@ -99,6 +106,7 @@ class UserData {
   final List<BankAccount> bankAccounts;
   final List<CreditCard> creditCards;
   final List<RecurringTemplate> recurringTemplates;
+  final List<SavingsGoal> savingsGoals;
 
   const UserData({
     this.settings,
@@ -108,5 +116,6 @@ class UserData {
     required this.bankAccounts,
     required this.creditCards,
     required this.recurringTemplates,
+    required this.savingsGoals,
   });
 }

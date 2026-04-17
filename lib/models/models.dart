@@ -344,3 +344,130 @@ class CreditCardTransaction {
     isPaid: json['isPaid'] as bool? ?? false,
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SAVINGS GOALS
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum GoalPriority { low, medium, high }
+
+class SavingsGoal {
+  final String id;
+  String name;
+  String emoji;           // e.g. "🏠", "✈️", "🚗"
+  double targetAmount;
+  double savedAmount;     // updated via contributions
+  DateTime? targetDate;   // optional deadline
+  GoalPriority priority;
+  String? linkedAccountId; // optional: earmark funds from a specific BankAccount
+  bool isCompleted;
+  DateTime createdAt;
+  List<GoalContribution> contributions;
+
+  SavingsGoal({
+    required this.id,
+    required this.name,
+    required this.emoji,
+    required this.targetAmount,
+    this.savedAmount = 0,
+    this.targetDate,
+    this.priority = GoalPriority.medium,
+    this.linkedAccountId,
+    this.isCompleted = false,
+    required this.createdAt,
+    List<GoalContribution>? contributions,
+  }) : contributions = contributions ?? [];
+
+  // ── Computed ────────────────────────────────────────────────────────────────
+  double get progressPct => targetAmount > 0
+      ? (savedAmount / targetAmount).clamp(0.0, 1.0)
+      : 0.0;
+
+  double get remaining => (targetAmount - savedAmount).clamp(0.0, double.infinity);
+
+  /// Days until target date; null if no deadline set.
+  int? get daysRemaining => targetDate != null
+      ? targetDate!.difference(DateTime.now()).inDays
+      : null;
+
+  /// Suggested monthly contribution to hit the goal by the deadline.
+  double? get suggestedMonthly {
+    final days = daysRemaining;
+    if (days == null || days <= 0) return null;
+    final months = days / 30.0;
+    return months > 0 ? remaining / months : null;
+  }
+
+  bool get isOverdue =>
+      targetDate != null &&
+      targetDate!.isBefore(DateTime.now()) &&
+      !isCompleted;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'emoji': emoji,
+    'targetAmount': targetAmount,
+    'savedAmount': savedAmount,
+    'targetDate': targetDate?.toIso8601String(),
+    'priority': priority.index,
+    'linkedAccountId': linkedAccountId,
+    'isCompleted': isCompleted,
+    'createdAt': createdAt.toIso8601String(),
+    'contributions': contributions.map((c) => c.toJson()).toList(),
+  };
+
+  factory SavingsGoal.fromJson(Map<String, dynamic> json) => SavingsGoal(
+    id: json['id'] as String,
+    name: json['name'] as String,
+    emoji: json['emoji'] as String? ?? '🎯',
+    targetAmount: (json['targetAmount'] as num).toDouble(),
+    savedAmount: (json['savedAmount'] as num? ?? 0).toDouble(),
+    targetDate: json['targetDate'] != null
+        ? DateTime.parse(json['targetDate'] as String)
+        : null,
+    priority: GoalPriority.values[json['priority'] as int? ?? 1],
+    linkedAccountId: json['linkedAccountId'] as String?,
+    isCompleted: json['isCompleted'] as bool? ?? false,
+    createdAt: DateTime.parse(json['createdAt'] as String),
+    contributions: (json['contributions'] as List<dynamic>?)
+            ?.map((c) => GoalContribution.fromJson(c as Map<String, dynamic>))
+            .toList() ??
+        [],
+  );
+}
+
+/// A single deposit toward a goal (separate from BankTransaction — goals are
+/// logical earmarks, not necessarily tied to actual bank movements).
+class GoalContribution {
+  final String id;
+  final String goalId;
+  double amount;
+  String note;
+  DateTime date;
+
+  GoalContribution({
+    required this.id,
+    required this.goalId,
+    required this.amount,
+    required this.note,
+    required this.date,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'goalId': goalId,
+    'amount': amount,
+    'note': note,
+    'date': date.toIso8601String(),
+  };
+
+  factory GoalContribution.fromJson(Map<String, dynamic> json) =>
+      GoalContribution(
+        id: json['id'] as String,
+        goalId: json['goalId'] as String,
+        amount: (json['amount'] as num).toDouble(),
+        note: json['note'] as String? ?? '',
+        date: DateTime.parse(json['date'] as String),
+      );
+}

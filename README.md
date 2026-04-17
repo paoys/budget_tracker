@@ -1,155 +1,212 @@
 # BudgetWise
 
-A personal finance tracker built with Flutter and Firebase. Track your income, expenses, budget, savings, and credit cards — all in one place, with cloud sync across devices.
+A personal finance tracker built with Flutter, Firebase, and the 50/30/20 budgeting method. Track income, expenses, credit cards, recurring bills, and savings accounts — all synced to the cloud.
 
 ---
 
 ## Features
 
-- **Overview** — 6-month spending trend, payment due alerts, and recent expenses at a glance
-- **Expenses** — Log and categorize spending by Needs, Wants, or Savings; supports multiple payment modes (cash, GCash, Maya, credit card, etc.)
-- **Budget** — Set budget targets per category and track how much you've used
-- **Savings** — Monitor savings goals and progress
-- **Credit Cards** — Track card balances, statement periods, and payment due dates with correct billing cycle logic
-- **Income & Setup** — Configure income sources and budget split percentages (accessible from the Budget tab)
-- **Recurring** — Manage recurring transactions and templates (accessible from the Cards tab)
-- **Authentication** — Email/password sign-in, registration, Google Sign-In, and password reset via Firebase Auth
-- **Cloud Sync** — Data synced to Firestore per user; local persistence via SharedPreferences for offline support
-- **Dark/Light mode** — Toggleable from Settings
+### Dashboard
+- Hero card showing total monthly income, amount spent, and remaining balance with a live progress bar
+- Over-budget / on-track status badge
+- Spending donut chart broken down by Needs, Wants, and Savings
+- Budget progress cards per category
+- Monthly bar chart of expenses over time
+- Overdue recurring transactions banner
+- Credit card bills due soon alert (within 7 days)
+- Recent expenses list
+
+### Income (`IncomeScreen`)
+- Add multiple income sources per month with a label and amount
+- Two income modes: **Monthly** (standard) and **Cutoff** (for salary periods tied to a cutoff day)
+- Navigate backward and forward between months (up to one month ahead)
+- Per-month breakdown showing how income splits into Needs / Wants / Savings allocations
+- Edit and delete individual income entries
+
+### Budget (`BudgetScreen`)
+- Visualizes the 50/30/20 split across three categories: **Needs**, **Wants**, **Savings**
+- Summary row: Total Budget, Total Allocated, Total Spent
+- Per-category progress bars showing spent vs. budget
+- Add, edit, and delete **sub-categories** (e.g. Rent, Electricity, Groceries) within each category
+- Real-time available balance shown when adding a sub-category
+- Prevents sub-category budgets from exceeding the parent category allocation
+- Unallocated balance indicator per category
+
+### Expenses (`ExpensesScreen`)
+- Log expenses with: title, amount, category, sub-category (optional), payment method, date, and notes
+- Filter by All / Needs / Wants / Savings using animated pill tabs
+- Payment methods: Cash, Credit Card, Debit Card, GCash, Maya, Bank Transfer, Other
+- Link credit card expenses directly to a specific card
+- Category and sub-category tags on each expense card
+- Swipe-to-delete with confirmation dialog
+- Sorted by date (most recent first)
+
+### Recurring Transactions (`RecurringScreen`)
+- Create recurring expense templates with daily, weekly, monthly, or yearly frequency
+- Set a start date and optional end date
+- Active vs. inactive template sections
+- Monthly cost summary across all active recurring items
+- Due-now banner on dashboard and recurring screen when a template is overdue
+- Process due templates directly from the dashboard or recurring screen
+- Frequency label and next due date displayed per template
+
+### Credit Cards (`CreditCardScreen`)
+- Add cards with: name, bank, credit limit, statement cut-off day, and payment due day
+- Automatically calculates:
+  - Previous statement period (closed, payment now due)
+  - Current open statement period (not yet billed)
+  - Next due date, with a days-until-due counter
+  - Unpaid balance from the closed statement
+  - Available credit remaining
+- Per-card transaction log: add transactions, mark individual transactions as paid
+- Bill due soon warning when unpaid statement balance exists and due date is within 7 days
+- Total owed summary across all cards
+- Edit and delete cards
+
+### Savings / Bank Accounts (`SavingsScreen`)
+- Add bank accounts and e-wallets (BDO, BPI, GCash, Maya, etc.)
+- Track balance per account
+- Log transactions (deposits/withdrawals) per account
+- Total savings summary across all accounts
+
+### Settings (`SettingsScreen`)
+- Adjust the budget split percentages (Needs / Wants / Savings) — defaults to 50 / 30 / 20
+- Toggle between **Monthly** and **Cutoff** income modes globally
+- Dark / Light mode toggle
+- Account profile display (name, email, profile photo)
+- Cloud sync status indicator (Syncing / Synced / Error)
+- Manual sync trigger and retry on error
+- Sign out
 
 ---
 
-## Project Structure
+## Architecture
 
 ```
 lib/
-├── main.dart                    # App entry point, auth gate, navigation shell, bottom nav
-├── firebase_options.dart        # Firebase configuration (generated)
+├── main.dart                  # App entry point, Firebase init, auth gate, bottom nav
+├── firebase_options.dart      # FlutterFire generated config
 ├── models/
-│   └── models.dart              # All data models (Expense, CreditCard, Income, etc.)
+│   └── models.dart            # All data models and enums
 ├── providers/
-│   ├── app_provider.dart        # Main state management via ChangeNotifier
-│   └── auth_provider.dart       # Auth state (Firebase Auth + Google Sign-In)
-├── services/
-│   └── firestore_service.dart   # Firestore read/write helpers
+│   ├── app_provider.dart      # Main state management (ChangeNotifier)
+│   └── auth_provider.dart     # Firebase Auth state
 ├── screens/
-│   ├── login_screen.dart        # Login, registration, and password reset
-│   ├── dashboard_screen.dart    # Home / Overview
-│   ├── expenses_screen.dart     # Expenses list and logging
-│   ├── budget_screen.dart       # Budget breakdown
-│   ├── savings_screen.dart      # Savings goals
-│   ├── credit_card_screen.dart  # Credit card management
-│   ├── income_screen.dart       # Income & setup (pushed screen)
-│   ├── recurring_screen.dart    # Recurring transactions (pushed screen)
-│   └── settings_screen.dart     # App settings and sign-out
+│   ├── login_screen.dart
+│   ├── dashboard_screen.dart
+│   ├── income_screen.dart
+│   ├── budget_screen.dart
+│   ├── expenses_screen.dart
+│   ├── recurring_screen.dart
+│   ├── credit_card_screen.dart
+│   ├── savings_screen.dart
+│   └── settings_screen.dart
+├── services/
+│   └── firestore_service.dart # Firestore CRUD layer
 ├── utils/
-│   └── theme.dart               # Colors, typography, AppColors extension
+│   └── theme.dart             # AppColors, theme builder, shared formatters
 └── widgets/
-    └── shared_widgets.dart      # Reusable UI components
+    └── shared_widgets.dart    # Reusable UI components
 ```
 
----
+### State Management
+`AppProvider` (Provider / ChangeNotifier) holds all app state. It:
+- Loads data from `SharedPreferences` on startup for instant local display
+- Syncs with Firestore after sign-in, applying remote data if it exists or pushing local data up on first login
+- Exposes computed getters (`totalIncome`, `needsBudget`, `totalSpent`, `remainingTotal`, `cardsDueSoon`, `overdueRecurring`, etc.) consumed directly by widgets
 
-## Navigation
+### Data Layer
+`FirestoreService` handles all Firestore reads and writes with typed helpers per collection. Data is stored under `users/{uid}/` with separate subcollections for each entity type. All writes go through `AppProvider`, which persists to both Firestore and local `SharedPreferences`.
 
-The bottom nav bar has **5 tabs**: Home, Expenses, Budget, Savings, Cards.
-
-| Tab | Screen |
-|-----|--------|
-| Home | Dashboard / Overview |
-| Expenses | Expenses |
-| Budget | Budget |
-| Savings | Savings |
-| Cards | Credit Cards |
-
-**Income & Setup** and **Recurring** are accessible via icon buttons in the top AppBar — Income appears when on the Budget tab, Recurring appears when on the Cards tab. Both screens have a back button to return to the previous tab.
+### Navigation
+Custom animated bottom navigation bar with 5 tabs: **Dashboard**, **Budget**, **Expenses**, **Cards**, **Savings**. Income, Recurring, and Settings are accessed via modal sheets or push routes from within those tabs.
 
 ---
 
-## Authentication
+## Data Models
 
-BudgetWise uses **Firebase Authentication** with the following flows:
+| Model | Key Fields |
+|---|---|
+| `AppSettings` | `needsPercent`, `wantsPercent`, `savingsPercent`, `incomeMode`, `isDarkMode` |
+| `Income` | `amount`, `label`, `mode` (monthly/cutoff), `cutoffPeriod`, `date` |
+| `BudgetSubCategory` | `name`, `budgetAmount`, `category` (needs/wants/savings) |
+| `Expense` | `title`, `amount`, `category`, `subCategoryId`, `paymentMode`, `date`, `notes`, `creditCardId`, `isRecurring`, `recurringFrequency`, `recurringEndDate`, `recurringGroupId` |
+| `RecurringTemplate` | `title`, `amount`, `category`, `paymentMode`, `frequency`, `startDate`, `endDate`, `lastProcessed` |
+| `BankAccount` | `name`, `bankName`, `balance`, `transactions[]` |
+| `BankTransaction` | `description`, `amount`, `date` |
+| `CreditCard` | `name`, `bank`, `creditLimit`, `balance`, `statementDay`, `dueDay`, `transactions[]` |
+| `CreditCardTransaction` | `description`, `amount`, `date`, `isPaid` |
 
-- **Email & Password** — Sign in or register with a name, email, and password
-- **Google Sign-In** — One-tap sign-in via Google (uses popup on web, native flow on mobile)
-- **Password Reset** — Send a reset email from the login screen
-- **Auth Gate** — The app listens to `authStateChanges()` and routes to the login screen or main shell automatically
+### Enums
 
-User data in Firestore is scoped per `uid`, so each account has isolated data.
+| Enum | Values |
+|---|---|
+| `IncomeMode` | `monthly`, `cutoff` |
+| `CategoryType` | `needs`, `wants`, `savings` |
+| `PaymentMode` | `cash`, `creditCard`, `debitCard`, `gcash`, `maya`, `bankTransfer`, `other` |
+| `RecurringFrequency` | `daily`, `weekly`, `monthly`, `yearly` |
 
 ---
 
-## Data & Sync
+## Tech Stack
 
-- **Firestore** is used as the primary cloud store. Data is read and written through `FirestoreService`.
-- **SharedPreferences** provides local persistence so the app works offline.
-- `AppProvider` initializes local data on startup and syncs with Firestore when a user is signed in (`initForUser(uid)`). On sign-out, local user data is cleared via `clearUser()`.
-- A **sync status indicator** in the AppBar shows `Syncing`, `Synced`, or `Offline` states.
-
----
-
-## Credit Card Billing Logic
-
-Statement cut-off day and due day are configurable per card. The billing logic works as follows:
-
-- **Previous statement** — the closed billing cycle (e.g. Feb 25 → Mar 25). Unpaid charges here are **due now**.
-- **Current period** — the open billing cycle (e.g. Mar 25 → Apr 25). Charges here are **not yet due**.
-- **Due date** — always the `dueDay` of the month following the statement cut-off (e.g. Apr 14 for a Mar 25 cut-off).
-
-A transaction made on Apr 10 with a cut-off of the 25th will appear under "Current period (not yet due)" and will **not** trigger a payment alert until the next statement closes.
+| Layer | Package |
+|---|---|
+| Framework | Flutter |
+| State management | `provider` |
+| Backend / Auth | Firebase (Firestore + Firebase Auth) |
+| Local cache | `shared_preferences` |
+| Charts | `fl_chart` |
+| Typography | `google_fonts` (Inter, Plus Jakarta Sans) |
+| ID generation | `uuid` |
 
 ---
 
 ## Getting Started
 
-### Requirements
+### Prerequisites
+- Flutter SDK (3.x or later)
+- A Firebase project with Firestore and Google Sign-In enabled
 
-- Flutter SDK 3.x+
-- Dart 3.x+
-- A Firebase project with **Authentication** and **Firestore** enabled
+### Setup
 
-### Firebase Setup
+1. Clone the repository and install dependencies:
+   ```bash
+   flutter pub get
+   ```
 
-1. Create a project at [console.firebase.google.com](https://console.firebase.google.com)
-2. Enable **Email/Password** and **Google** sign-in methods under Authentication → Sign-in methods
-3. Enable **Cloud Firestore** under Firestore Database
-4. Run `flutterfire configure` to generate `firebase_options.dart`
+2. Connect your Firebase project using FlutterFire CLI:
+   ```bash
+   flutterfire configure
+   ```
+   This generates `lib/firebase_options.dart`.
 
-### Run
+3. In the Firebase Console:
+   - Enable **Cloud Firestore**
+   - Enable **Google Sign-In** under Authentication
 
-```bash
-flutter pub get
-flutter run
+4. Run the app:
+   ```bash
+   flutter run
+   ```
+
+### Firestore Security Rules
+
+Restrict access so users can only read and write their own data:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
 ```
 
 ---
 
-## Dependencies
+## Currency
 
-| Package | Purpose |
-|---------|---------|
-| `firebase_core` | Firebase initialization |
-| `firebase_auth` | Authentication |
-| `cloud_firestore` | Cloud database |
-| `google_sign_in` | Google OAuth |
-| `provider` | State management |
-| `shared_preferences` | Local persistence |
-| `google_fonts` | Plus Jakarta Sans, Inter |
-| `uuid` | Unique ID generation |
-
----
-
-## Recent Changes
-
-| File | Change |
-|------|--------|
-| `lib/providers/auth_provider.dart` | Added Firebase Auth integration; email/password, Google Sign-In (web popup + mobile), password reset, and friendly error messages |
-| `lib/services/firestore_service.dart` | New service layer for all Firestore reads and writes, scoped per user |
-| `lib/providers/app_provider.dart` | Added `initForUser(uid)` and `clearUser()` for per-user cloud sync; integrated FirestoreService |
-| `lib/screens/login_screen.dart` | New login screen with sign-in, registration, and password reset flows |
-| `lib/main.dart` | Added `_AuthGate` to route between login and main shell based on Firebase auth state |
-| `lib/models/models.dart` | Fixed credit card billing cycle logic — added `prevStatementDate`, `previousStatementTransactions`; corrected `nextDueDate` and `hasBillDue` |
-| `lib/screens/credit_card_screen.dart` | Updated statement info UI to correctly show previous vs current period; fixed Pay Bill modal |
-| `lib/screens/dashboard_screen.dart` | Fixed Payment Due Soon card to show correct statement date range |
-| `lib/screens/income_screen.dart` | Added AppBar with back button |
-| `lib/screens/recurring_screen.dart` | Added AppBar with back button |
+All amounts are displayed in **Philippine Peso (₱)**. The peso formatter is defined in `utils/theme.dart` and used throughout all screens.
