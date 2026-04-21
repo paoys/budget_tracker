@@ -18,6 +18,8 @@ import 'screens/savings_screen.dart';
 import 'screens/credit_card_screen.dart';
 import 'screens/recurring_screen.dart';
 import 'screens/settings_screen.dart';
+import 'services/notification_service.dart';
+import 'widgets/notification_sheet.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -217,9 +219,10 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
     final p = context.watch<AppProvider>();
     final auth = context.watch<ap.AuthProvider>(); // for avatar + sync
 
+    final allNotifs = NotificationService.buildNotifications(p);
     final ccDueCount = p.cardsDueSoon.length;
     final recurringDueCount = p.overdueRecurring.length;
-    final totalAlerts = ccDueCount + recurringDueCount;
+    final totalAlerts = allNotifs.length;
 
     return Scaffold(
       appBar: AppBar(
@@ -247,7 +250,7 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
             Stack(children: [
               IconButton(
                 tooltip: 'Notifications',
-                onPressed: () => _onTap(4),
+                onPressed: () => showNotificationSheet(context),
                 icon: const Icon(Icons.notifications_outlined, size: 22),
               ),
               Positioned(
@@ -341,7 +344,11 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
         items: _items,
         controllers: _iconControllers,
         onTap: _onTap,
-        badges: {4: ccDueCount > 0},
+        badges: {
+          0: recurringDueCount > 0,          // Home: recurring due
+          2: allNotifs.any((n) => n.type == NotifType.overBudget), // Budget: over budget
+          4: ccDueCount > 0,                  // Cards: CC due
+        },
       ),
     );
   }
