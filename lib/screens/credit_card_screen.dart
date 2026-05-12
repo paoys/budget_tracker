@@ -26,7 +26,9 @@ class CreditCardScreen extends StatelessWidget {
         label: Text('Add Card', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13)),
         elevation: 0,
       ),
-      body: ListView(
+      body: ResponsiveCenter(
+        maxWidth: 960,
+        child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
         children: [
           if (p.creditCards.isNotEmpty) ...[
@@ -44,6 +46,7 @@ class CreditCardScreen extends StatelessWidget {
             ...p.creditCards.map((card) => Padding(padding: const EdgeInsets.only(bottom: 16), child: _CreditCardWidget(card: card))),
           ],
         ],
+        ),
       ),
     );
   }

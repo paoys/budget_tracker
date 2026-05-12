@@ -44,7 +44,10 @@ class _SavingsScreenState extends State<SavingsScreen>
 
     return Scaffold(
       floatingActionButton: _SavingsFAB(tab: _tab),
-      body: Column(children: [
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 960),
+          child: Column(children: [
         Container(
           margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           padding: const EdgeInsets.all(20),
@@ -112,6 +115,8 @@ class _SavingsScreenState extends State<SavingsScreen>
         ),
         Expanded(child: TabBarView(controller: _tab, children: [_AccountsTab(), _GoalsTab()])),
       ]),
+        ),
+      ),
     );
   }
 }

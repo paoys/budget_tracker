@@ -80,7 +80,12 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         label: Text('Log Expense', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13)),
         elevation: 0,
       ),
-      body: Column(children: [
+      body: LayoutBuilder(builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 600;
+        return Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: isWide ? 900 : double.infinity),
+            child: Column(children: [
         // ── Stats ────────────────────────────────────────────────────────────
         Container(
           color: colors.bg,
@@ -240,6 +245,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 ),
         ),
       ]),
+          ),
+        );
+      }),
     );
   }
 
