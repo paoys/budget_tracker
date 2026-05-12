@@ -25,18 +25,34 @@ class BudgetScreen extends StatelessWidget {
         label: Text('Add Sub-category', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13)),
         elevation: 0,
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-        children: [
-          _BudgetSummaryRow(p: p),
-          const SizedBox(height: 20),
-          _CategorySection(type: CategoryType.needs,   label: 'Needs',   budget: p.needsBudget),
-          const SizedBox(height: 16),
-          _CategorySection(type: CategoryType.wants,   label: 'Wants',   budget: p.wantsBudget),
-          const SizedBox(height: 16),
-          _CategorySection(type: CategoryType.savings, label: 'Savings', budget: p.savingsBudget),
-        ],
-      ),
+      body: Builder(builder: (context) {
+        final isWide = Breakpoints.isWide(context);
+        final hPad = isWide ? 24.0 : 16.0;
+        return ResponsiveCenter(
+          maxWidth: 1000,
+          child: ListView(
+            padding: EdgeInsets.fromLTRB(hPad, 8, hPad, 100),
+            children: [
+              _BudgetSummaryRow(p: p),
+              const SizedBox(height: 20),
+              if (isWide) ...[
+                TwoColumnLayout(
+                  left: _CategorySection(type: CategoryType.needs,   label: 'Needs',   budget: p.needsBudget),
+                  right: _CategorySection(type: CategoryType.wants,  label: 'Wants',   budget: p.wantsBudget),
+                ),
+                const SizedBox(height: 16),
+                _CategorySection(type: CategoryType.savings, label: 'Savings', budget: p.savingsBudget),
+              ] else ...[
+                _CategorySection(type: CategoryType.needs,   label: 'Needs',   budget: p.needsBudget),
+                const SizedBox(height: 16),
+                _CategorySection(type: CategoryType.wants,   label: 'Wants',   budget: p.wantsBudget),
+                const SizedBox(height: 16),
+                _CategorySection(type: CategoryType.savings, label: 'Savings', budget: p.savingsBudget),
+              ],
+            ],
+          ),
+        );
+      }),
     );
   }
 

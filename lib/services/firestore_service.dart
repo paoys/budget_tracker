@@ -69,6 +69,23 @@ class FirestoreService {
   Future<void> deleteRecurringTemplate(String uid, String id)          => remove(uid, 'recurringTemplates', id);
   Future<List<RecurringTemplate>> fetchRecurringTemplates(String uid)  => _fetch(uid, 'recurringTemplates', RecurringTemplate.fromJson);
 
+  // ── Full user data delete (used before authoritative push) ─────────────────
+  /// Deletes all documents in every user subcollection. Called by push so
+  /// deleted-on-device items don't survive in Firestore.
+  Future<void> deleteAllUserData(String uid) async {
+    const collections = [
+      'incomes', 'subCategories', 'expenses',
+      'bankAccounts', 'creditCards', 'recurringTemplates', 'savings_goals',
+    ];
+    for (final col in collections) {
+      final snap = await _col(uid, col).get();
+      for (final doc in snap.docs) {
+        await doc.reference.delete();
+      }
+    }
+    // Settings doc is a single doc, not a collection — overwrite in place (no delete needed)
+  }
+
   // ── Full user data fetch ────────────────────────────────────────────────────
   Future<UserData> fetchAllUserData(String uid) async {
     final settings           = await fetchSettings(uid);

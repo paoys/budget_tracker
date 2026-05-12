@@ -309,3 +309,31 @@ class CategorySelector extends StatelessWidget {
     }).toList());
   }
 }
+
+// ── Responsive Modal Helper ────────────────────────────────────────────────────
+/// Shows a bottom sheet on phones, and a centered dialog on tablets/desktop.
+Future<T?> showResponsiveModal<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  bool isScrollControlled = true,
+}) {
+  final isWide = MediaQuery.sizeOf(context).width >= 600;
+  if (isWide) {
+    return showDialog<T>(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520, maxHeight: 800),
+          child: SingleChildScrollView(child: builder(ctx)),
+        ),
+      ),
+    );
+  }
+  return showModalBottomSheet<T>(
+    context: context,
+    isScrollControlled: isScrollControlled,
+    builder: builder,
+  );
+}

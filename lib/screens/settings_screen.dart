@@ -74,7 +74,7 @@ class SettingsScreen extends StatelessWidget {
             else
               Row(children: [
                 GestureDetector(
-                  onTap: () => p.syncNow(),
+                  onTap: () => _confirmPush(context, p),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(color: colors.surface2, borderRadius: BorderRadius.circular(8), border: Border.all(color: colors.divider)),
@@ -87,7 +87,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 GestureDetector(
-                  onTap: () => p.pullFromCloud(),
+                  onTap: () => _confirmPull(context, p),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(color: colors.surface2, borderRadius: BorderRadius.circular(8), border: Border.all(color: colors.divider)),
@@ -220,6 +220,69 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
+  void _confirmPush(BuildContext ctx, AppProvider p) {
+    showDialog(
+      context: ctx,
+      builder: (dCtx) => AlertDialog(
+        title: const Text('Push to Cloud'),
+        content: const Text(
+          "This will OVERWRITE the cloud with this device's data.\n\n"
+          "Any data on other devices that have not been pushed here will be lost.\n\n"
+          "Are you sure?",
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dCtx);
+              await p.syncNow();
+              if (ctx.mounted) {
+                ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                  content: Text(p.syncStatus == SyncStatus.synced
+                      ? "Cloud updated with this device's data"
+                      : 'Push failed — check your connection'),
+                  backgroundColor: p.syncStatus == SyncStatus.synced ? kSuccessColor : kDangerColor,
+                ));
+              }
+            },
+            child: const Text('Push', style: TextStyle(color: kDangerColor)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmPull(BuildContext ctx, AppProvider p) {
+    showDialog(
+      context: ctx,
+      builder: (dCtx) => AlertDialog(
+        title: const Text('Pull from Cloud'),
+        content: const Text(
+          "This will REPLACE this device's data with the cloud version.\n\n"
+          "Any local changes not yet pushed will be lost.\n\n"
+          "Are you sure?",
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dCtx);
+              await p.pullFromCloud();
+              if (ctx.mounted) {
+                ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                  content: Text(p.syncStatus == SyncStatus.synced
+                      ? 'Data updated from cloud'
+                      : 'Pull failed — check your connection'),
+                  backgroundColor: p.syncStatus == SyncStatus.synced ? kSuccessColor : kDangerColor,
+                ));
+              }
+            },
+            child: const Text('Pull', style: TextStyle(color: kDangerColor)),
+          ),
+        ],
+      ),
+    );
+  }
   Color    _syncColor(SyncStatus s) => s == SyncStatus.synced ? kSuccessColor : s == SyncStatus.error ? kDangerColor : kWarningColor;
   IconData _syncIcon(SyncStatus s)  => s == SyncStatus.synced ? Icons.cloud_done_rounded : s == SyncStatus.error ? Icons.cloud_off_rounded : Icons.cloud_sync_rounded;
   String   _syncLabel(SyncStatus s) => s == SyncStatus.synced ? 'Data synced with cloud' : s == SyncStatus.error ? 'Sync failed' : s == SyncStatus.syncing ? 'Syncing...' : 'Not synced';

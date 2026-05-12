@@ -61,10 +61,18 @@ class AppProvider extends ChangeNotifier {
   double get remainingSavings  => savingsBudget - totalSavingsSpent;
   double get remainingTotal    => totalIncome - totalSpent;
 
+  /// Current-month expenses — source of truth for all budget/spent calculations.
+  List<Expense> get currentMonthExpenses {
+    final now = DateTime.now();
+    return _expenses
+        .where((e) => e.date.year == now.year && e.date.month == now.month)
+        .toList();
+  }
+
   double _expensesByCategory(CategoryType cat) =>
-      _expenses.where((e) => e.category == cat).fold(0.0, (s, e) => s + e.amount);
+      currentMonthExpenses.where((e) => e.category == cat).fold(0.0, (s, e) => s + e.amount);
   double subCategorySpent(String id) =>
-      _expenses.where((e) => e.subCategoryId == id).fold(0.0, (s, e) => s + e.amount);
+      currentMonthExpenses.where((e) => e.subCategoryId == id).fold(0.0, (s, e) => s + e.amount);
   double subCategoryBudget(String id) => _subCategories.firstWhere(
       (s) => s.id == id,
       orElse: () => BudgetSubCategory(id: '', name: '', budgetAmount: 0, category: CategoryType.needs)).budgetAmount;
@@ -118,6 +126,19 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Wipes only the SharedPreferences cache (not in-memory state).
+  Future<void> clearLocalPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('settings');
+    await prefs.remove('incomes');
+    await prefs.remove('subCategories');
+    await prefs.remove('expenses');
+    await prefs.remove('bankAccounts');
+    await prefs.remove('creditCards');
+    await prefs.remove('recurringTemplates');
+    await prefs.remove('savingsGoals');
+  }
+
   Future<void> clearUser() async {
     _uid = null;
     _syncStatus = SyncStatus.idle;
@@ -134,15 +155,7 @@ class AppProvider extends ChangeNotifier {
     _savingsGoals = [];
 
     // Wipe the local cache so the next login starts clean from Firestore
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('settings');
-    await prefs.remove('incomes');
-    await prefs.remove('subCategories');
-    await prefs.remove('expenses');
-    await prefs.remove('bankAccounts');
-    await prefs.remove('creditCards');
-    await prefs.remove('recurringTemplates');
-    await prefs.remove('savingsGoals');
+    await clearLocalPrefs();
 
     notifyListeners();
   }
@@ -162,7 +175,12 @@ class AppProvider extends ChangeNotifier {
     _savingsGoals       = r.savingsGoals;
   }
 
+  /// Full authoritative push: clears every Firestore collection for this user
+  /// then writes exactly what is in memory. This means push = "my device wins".
   Future<void> _pushAllToFirestore(String uid) async {
+    // 1. Delete all existing remote docs so stale entries don't linger
+    await _fs.deleteAllUserData(uid);
+    // 2. Write current in-memory state
     await _fs.saveSettings(uid, _settings);
     for (final i in _incomes)            await _fs.saveIncome(uid, i);
     for (final s in _subCategories)      await _fs.saveSubCategory(uid, s);
@@ -292,7 +310,8 @@ class AppProvider extends ChangeNotifier {
       if (i >= 0) {
         _creditCards[i].balance += expense.amount;
         _creditCards[i].transactions.add(CreditCardTransaction(
-          id: _uuid.v4(), description: expense.title,
+          id: expense.id,  // Use expense ID so deleteExpense can match exactly
+          description: expense.title,
           amount: expense.amount, date: expense.date,
         ));
         _creditCards[i].transactions.sort((a, b) => b.date.compareTo(a.date));
@@ -312,8 +331,27 @@ class AppProvider extends ChangeNotifier {
     if (e.id.isNotEmpty && e.paymentMode == PaymentMode.creditCard && e.creditCardId != null) {
       final i = _creditCards.indexWhere((c) => c.id == e.creditCardId);
       if (i >= 0) {
-        _creditCards[i].balance -= e.amount;
-        _creditCards[i].transactions.removeWhere((t) => t.description == e.title && t.amount == e.amount);
+        // Match CC transaction by expense ID stored as the transaction id (set in addExpense),
+        // falling back to description+amount+date match to handle legacy entries.
+        final removed = _creditCards[i].transactions.any((t) => t.id == id);
+        if (removed) {
+          final tx = _creditCards[i].transactions.firstWhere((t) => t.id == id);
+          if (!tx.isPaid) _creditCards[i].balance -= tx.amount;
+          _creditCards[i].transactions.removeWhere((t) => t.id == id);
+        } else {
+          // Legacy fallback: match by date+amount (more precise than description+amount)
+          final txIdx = _creditCards[i].transactions.indexWhere(
+            (t) => t.amount == e.amount &&
+                   t.date.year == e.date.year &&
+                   t.date.month == e.date.month &&
+                   t.date.day == e.date.day &&
+                   !t.isPaid,
+          );
+          if (txIdx >= 0) {
+            _creditCards[i].balance -= _creditCards[i].transactions[txIdx].amount;
+            _creditCards[i].transactions.removeAt(txIdx);
+          }
+        }
         await _cloud((uid) => _fs.saveCreditCard(uid, _creditCards[i]));
       }
     }
@@ -481,7 +519,10 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final remote = await _fs.fetchAllUserData(uid);
+      // Apply remote data — this fully replaces in-memory state
       _applyRemoteData(remote);
+      // Wipe local prefs and write the fresh remote state so nothing stale lingers
+      await clearLocalPrefs();
       await _saveToPrefs();
       _setSynced();
     } catch (e) {
